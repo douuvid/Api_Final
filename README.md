@@ -264,7 +264,84 @@ Pour plus d'informations sur les paramètres de recherche disponibles, consultez
 - `secteurActivite` : Secteur d'activité
 - `range` : Pagination (ex: "0-9" pour les 10 premiers résultats)
 
-## Dépannage
+## Méthodes disponibles
+
+#### `search_jobs(params: Optional[Dict[str, Any]] = None) -> Optional[Dict]`
+
+Recherche des offres d'emploi selon les critères spécifiés.
+
+**Paramètres :**
+- `params` (dict, optionnel) : Dictionnaire des paramètres de recherche. Les clés possibles sont :
+  - `motsCles` (str) : Mots-clés pour la recherche
+  - `commune` (str) : Code INSEE de la commune
+  - `distance` (int) : Rayon de recherche en kilomètres
+  - `typeContrat` (str) : Type de contrat (CDI, CDD, etc.)
+  - `experience` (str) : Niveau d'expérience requis
+  - `qualification` (str) : Niveau de qualification
+  - `secteurActivite` (str) : Secteur d'activité
+  - `entrepriseAdaptee` (bool) : Entreprise adaptée
+  - `range` (str) : Plage de résultats (ex: "0-9" pour les 10 premiers résultats)
+
+**Retourne :**
+- Un dictionnaire contenant les résultats de la recherche ou None en cas d'erreur
+
+#### `get_job_details(job_id: str) -> Optional[Dict]`
+
+Récupère les détails d'une offre d'emploi spécifique.
+
+**Paramètres :**
+- `job_id` (str) : Identifiant de l'offre d'emploi
+
+**Retourne :**
+- Un dictionnaire contenant les détails de l'offre ou None en cas d'erreur
+
+#### `match_soft_skills(rome_code: str, skills: list) -> Optional[Dict]`
+
+Évalue la correspondance entre des compétences douces et un métier spécifique.
+
+**Paramètres :**
+- `rome_code` (str) : Code ROME du métier cible (ex: 'M1805' pour Développeur informatique)
+- `skills` (list) : Liste des compétences douces à évaluer (ex: ['communication', 'travail d\'équipe'])
+
+**Retourne :**
+Un dictionnaire contenant :
+- `match_score` (float) : Score global de correspondance (entre 0 et 1)
+- `matching_skills` (list) : Liste des compétences pertinentes trouvées
+- `missing_skills` (list) : Liste des compétences importantes manquantes
+- `recommendations` (list) : Suggestions pour améliorer le matching
+
+Retourne None en cas d'erreur.
+
+**Exemple d'utilisation :**
+
+```python
+from france_travail import FranceTravailAPI
+
+# Initialisation du client
+api = FranceTravailAPI(client_id, client_secret)
+
+# Compétences à évaluer
+competences = [
+    'communication',
+    'travail d\'équipe',
+    'résolution de problèmes',
+    'autonomie',
+    'créativité'
+]
+
+# Appel de l'API
+resultats = api.match_soft_skills('M1805', competences)
+
+# Affichage des résultats
+if resultats:
+    print(f"Score de correspondance: {resultats.get('match_score', 0):.0%}")
+    print("\nCompétences pertinentes:")
+    for comp in resultats.get('matching_skills', []):
+        print(f"- {comp}")
+    print("\nCompétences à développer:")
+    for comp in resultats.get('missing_skills', []):
+        print(f"- {comp}")
+```
 
 ### Erreur d'authentification
 - Vérifiez que votre client ID et client secret sont corrects
