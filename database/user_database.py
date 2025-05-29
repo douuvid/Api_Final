@@ -34,7 +34,7 @@ class UserDatabase:
             return True
         except psycopg2.Error as e:
             logger.error(f"❌ Erreur de connexion PostgreSQL: {e}")
-            return False
+            return None
     
     def disconnect(self):
         """Ferme la connexion à la base de données"""
