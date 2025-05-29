@@ -1,5 +1,5 @@
 """
-Exemple d'utilisation du service de matching CV avec l'API France Travail
+Exemple d'utilisation du service de matching CV avec l'API France Travail c'est ici que le texte cv doit etre mis
 """
 
 import os
@@ -25,7 +25,7 @@ def main():
     print("🔍 Initialisation du service de matching CV...")
     matching_service = CVMatchingService(client_id, client_secret)
     
-    # Exemples de textes
+    # Exemples de textes le cv doit etre mis ici
     cv_text = """
     Développeur Full Stack avec 5 ans d'expérience. 
     Excellentes compétences en communication et capacité à travailler en équipe.
@@ -41,6 +41,23 @@ def main():
     adaptabilité aux changements technologiques, créativité dans les solutions,
     organisation et gestion de projets.
     """
+    
+    # Recherche d'offres similaires
+    print("\n🔍 Recherche d'offres similaires...")
+    similar_jobs = matching_service.search_similar_jobs(job_text, limit=2)  # Limité à 2 offres 
+    
+    # Affichage des offres similaires
+    if similar_jobs:
+        print(f"\n📋 {len(similar_jobs)} OFFRES SIMILAIRES TROUVÉES:")
+        for i, job in enumerate(similar_jobs, 1):
+            print(f"\n   📌 OFFRE {i}:")
+            print(f"   • Titre: {job.get('intitule', 'Non spécifié')}")
+            print(f"   • Entreprise: {job.get('entreprise', {}).get('nom', 'Non spécifié')}")
+            print(f"   • Lieu: {job.get('lieuTravail', {}).get('libelle', 'Non spécifié')}")
+            print(f"   • Type de contrat: {job.get('typeContratLibelle', 'Non spécifié')}")
+            print(f"   • Description: {job.get('description', 'Non disponible')[:150]}...")
+    else:
+        print("\n⚠️ Aucune offre similaire trouvée.")
     
     # Analyse du matching
     print("\n🔄 Analyse du matching CV-Offre en cours...")
