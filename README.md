@@ -195,6 +195,60 @@ France Travail applique des limites de débit (rate limiting) pour chaque API. V
 3. **Mettez en cache les réponses** : Pour réduire le nombre d'appaux inutiles.
 4. **Gérez les erreurs 429** : En cas de dépassement, attendez avant de réessayer.
 
+## Base de données
+
+Le module `database` fournit une interface complète pour gérer les utilisateurs et leurs données dans une base de données PostgreSQL.
+
+### Configuration
+
+1. Assurez-vous que PostgreSQL est installé et en cours d'exécution
+2. Créez un fichier `.env` à la racine du projet avec les informations de connexion :
+   ```env
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_NAME=job_search_app
+   DB_USER=postgres
+   DB_PASSWORD=votre_mot_de_passe
+   ```
+
+### Utilisation de base
+
+```python
+from database import UserDatabase
+
+# Initialisation
+db = UserDatabase(
+    host="localhost",
+    database="job_search_app",
+    user="postgres",
+    password="votre_mot_de_passe"
+)
+
+# Création des tables (à exécuter une seule fois)
+if db.connect():
+    db.create_tables()
+
+# Création d'un utilisateur
+user_data = {
+    'email': 'utilisateur@example.com',
+    'password': 'MotDePasseSécurisé123!',
+    'first_name': 'Prénom',
+    'last_name': 'Nom',
+    'phone': '+33612345678'
+}
+user_id, token = db.create_user(user_data)
+```
+
+### Fonctionnalités clés
+
+- Gestion des utilisateurs (création, authentification, mise à jour)
+- Gestion des compétences (ajout, suppression, recherche)
+- Suivi des expériences professionnelles
+- Gestion des formations
+- Sécurité intégrée (hachage des mots de passe, protection contre les attaques par force brute)
+
+Pour plus de détails, consultez la [documentation complète du module database](database/README.md).
+
 ## Documentation de l'API
 
 Pour plus d'informations sur les paramètres de recherche disponibles, consultez la [documentation officielle de l'API France Travail](https://www.emploi-store-dev.fr/).
