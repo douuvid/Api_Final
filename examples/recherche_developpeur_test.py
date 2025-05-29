@@ -28,7 +28,7 @@ def rechercher_offres_emploi():
     api = FranceTravailAPI(client_id, client_secret)
     
     # S'authentifier
-    if not client.authenticate():
+    if not api.authenticate():
         print("Échec de l'authentification")
         return
 
@@ -41,30 +41,98 @@ def rechercher_offres_emploi():
 
     # Effectuer la recherche
     print("Recherche d'offres en cours...")
-    resultats = client.search_jobs(params)
-
+    reponse = api.search_jobs(params)
+    
     # Vérifier et traiter les résultats
-    if not resultats or not isinstance(resultats, list):
+    if not reponse or 'resultats' not in reponse:
         print("Aucune offre trouvée ou erreur lors de la récupération des données.")
+        if reponse:
+            print(f"Réponse de l'API: {reponse}")
         return
-
+    
+    resultats = reponse.get('resultats', [])
+    
+    if not resultats:
+        print("Aucune offre ne correspond à vos critères de recherche.")
+        return
+    
     # Afficher les offres de manière lisible
+    print(f"\n{len(resultats)} offres trouvées. Affichage des 5 premières :\n")
     afficher_offres(resultats, limit=5, show_details=True)
 
     # Exemple de récupération des détails d'une offre spécifique
     if resultats:
-        print("\n" + "="*80)
-        choix = input("Voulez-vous voir les détails d'une offre en particulier ? (numéro ou 'n' pour quitter) ")
-        
-        if choix.isdigit() and 1 <= int(choix) <= len(resultats):
-            offre_id = resultats[int(choix)-1].get('id')
-            if offre_id:
-                print(f"\nRécupération des détails de l'offre {offre_id}...")
-                details = client.get_job_details(offre_id)
-                if details:
+        try:
+            while True:
+                try:
                     print("\n" + "="*80)
-                    print(format_offre(details, show_details=True))
-                    print("="*80)
+                    choix = input("Entrez le numéro d'une offre pour voir ses détails, ou 'n' pour quitter : ")
+                    
+                    if not choix:  # Gestion du cas où l'utilisateur appuie juste sur Entrée
+                        continue
+                        
+                    if choix.lower() == 'n':
+                        break
+                        
+                    if not choix.isdigit() or not (1 <= int(choix) <= len(resultats)):
+                        print(f"Veuillez entrer un nombre entre 1 et {len(resultats)}, ou 'n' pour quitter.")
+                        continue
+                        
+                    offre_id = resultats[int(choix)-1].get('id')
+                    if offre_id:
+                        print(f"\nRécupération des détails de l'offre {offre_id}...")
+                        details = api.get_job_details(offre_id)
+                        if details:
+                            print("\n" + "="*80)
+                            print(format_offre(details, show_details=True))
+                            print("="*80)
+                    else:
+                        print("ID d'offre non trouvé dans les résultats.")
+                        
+                except KeyboardInterrupt:
+                    print("\n\nInterruption par l'utilisateur.")
+                    break
+                except EOFError:
+                    print("\nFin de l'entrée détectée.")
+                    break
+                except Exception as e:
+                    print(f"\nUne erreur s'est produite : {str(e)}")
+                    continue
+            
+            print("\nMerci d'avoir utilisé le service de recherche d'offres d'emploi.")
+            
+        except Exception as e:
+            print(f"\nUne erreur inattendue s'est produite : {str(e)}")
+    else:
+        print("\nAucune offre à afficher.")
+
+def afficher_offres(offres, limit=5, show_details=False):
+    """Affiche la liste des offres de manière formatée"""
+    for i, offre in enumerate(offres[:limit], 1):
+        print(f"\n--- Offre {i} ---")
+        print(f"Titre: {offre.get('intitule', 'Non spécifié')}")
+        print(f"Entreprise: {offre.get('entreprise', {}).get('nom', 'Non spécifié')}")
+        print(f"Lieu: {offre.get('lieuTravail', {}).get('libelle', 'Non spécifié')}")
+        if show_details:
+            print(f"Description: {offre.get('description', 'Non disponible')}")
+
+def format_offre(offre, show_details=False):
+    """Formate une offre pour l'affichage"""
+    result = []
+    result.append(f"Titre: {offre.get('intitule', 'Non spécifié')}")
+    result.append(f"Entreprise: {offre.get('entreprise', {}).get('nom', 'Non spécifié')}")
+    result.append(f"Lieu: {offre.get('lieuTravail', {}).get('libelle', 'Non spécifié')}")
+    result.append(f"Type de contrat: {offre.get('typeContrat', 'Non spécifié')}")
+    if show_details:
+        result.append(f"\nDescription:\n{offre.get('description', 'Non disponible')}")
+    return "\n".join(result)
+
+def main():
+    """Fonction principale"""
+    try:
+        rechercher_offres_emploi()
+    except Exception as e:
+        print(f"Une erreur s'est produite: {str(e)}")
 
 if __name__ == "__main__":
     main()
