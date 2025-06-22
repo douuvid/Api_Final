@@ -1,100 +1,27 @@
-# 🚀 API France Travail - Matching de Compétences
+# Client API France Travail (Pôle Emploi)
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![API Status](https://img.shields.io/badge/API%20Status-En%20ligne-brightgreen)](https://www.emploi-store-dev.fr/)
 
-Solution complète pour l'analyse et le matching des compétences avec les offres d'emploi France Travail.
+Ce client Python permet d'interagir avec l'API France Travail (anciennement Pôle Emploi) pour rechercher des offres d'emploi et obtenir des détails sur des offres spécifiques.
 
-## ✨ Fonctionnalités
+## Table des matières
 
-- 🔍 Recherche intelligente d'offres d'emploi
-- 🎯 Matching précis des compétences
-- 📊 Analyse des tendances du marché
-- 🚀 API RESTful simple d'utilisation
-- 🔄 Données temps réel de l'API France Travail
-- 🛠️ Outils d'analyse avancée
+1. [Prérequis](#prérequis)
+2. [Installation](#installation)
+3. [Configuration](#configuration)
+4. [Utilisation](#utilisation)
+5. [Exemples](#exemples)
+6. [Documentation de l'API](#documentation-de-lapi)
+7. [Dépannage](#dépannage)
+8. [Contribution](#contribution)
+9. [Licence](#licence)
 
-## 📋 Table des matières
+## Prérequis
 
-- [Installation](#-installation)
-- [Configuration](#-configuration)
-- [Utilisation](#-utilisation)
-- [API Endpoints](#-api-endpoints)
-- [Exemples](#-exemples)
-- [Dépannage](#-dépannage)
-- [Contribution](#-contribution)
-- [Licence](#-licence)
-
-## 🚀 Installation
-
-### Prérequis
-
-- Python 3.8+
-- Compte développeur [France Travail](https://www.emploi-store-dev.fr/)
+- Python 3.6 ou supérieur
+- Compte développeur France Travail (Pôle Emploi)
 - Identifiants API (client ID et client secret)
-
-### Installation
-
-1. Cloner le dépôt :
-   ```bash
-   git clone https://github.com/douuvid/Api_Final.git
-   cd Api_Final
-   ```
-
-2. Créer un environnement virtuel :
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # OU
-   .\venv\Scripts\activate  # Windows
-   ```
-
-3. Installer les dépendances :
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## 🏗️ Architecture du Projet
-
-### 1. `app.py` - Le Serveur Principal
-**Rôle** : Gère les requêtes HTTP et les réponses API.
-
-**Fonctionnalités** :
-- 🚀 Lance le serveur web (port 5000)
-- 🔄 Gère les routes API
-- 🔒 Gère l'authentification
-- 🛠️ Orchestre les appaux aux différents services
-
-### 2. `france_travail/alternative_client.py` - Le Moteur d'API
-**Rôle** : Interface avec l'API France Travail.
-
-**Fonctions clés** :
-- 🔑 `get_access_token()` - Authentification
-- 🔍 `get_job_details_by_rome()` - Récupère les offres
-- 🎯 `match_soft_skills()` - Fait le matching des compétences
-- 🛠️ `extract_skills_from_offers()` - Analyse les offres
-
-### 3. `france_travail/rome4_api.py` - Référentiel des Métiers
-**Rôle** : Gère la nomenclature des métiers (ROME).
-
-**Utilité** :
-- 📚 Base de données des métiers
-- 🔎 Recherche par mot-clé
-- 🔗 Conversion intitulé ↔ code ROME
-
-### 🔄 Flux de Données
-1. L'utilisateur envoie une requête (ex: matching de compétences)
-2. `app.py` valide et route la requête
-3. `alternative_client.py` appelle l'API France Travail
-4. Les données sont traitées et analysées
-5. Une réponse structurée est renvoyée
-
-### 📊 Points Forts
-- Architecture modulaire
-- Gestion des erreurs robuste
-- Code documenté
-- Facile à étendre
 
 ## Installation
 
@@ -105,131 +32,9 @@ Solution complète pour l'analyse et le matching des compétences avec les offre
 python -m venv venv
 source venv/bin/activate  # Sur Windows: venv\Scripts\activate
 
-# Installer les dépendances
-pip install requests python-dotenv
-
-# Cloner le dépôt
-git clone https://github.com/douuvid/Api_Final.git
-cd Api_Final
+# Installer le package
+pip install france-travail-api
 ```
-
-## ⚙️ Configuration
-
-1. Créer un fichier `.env` à la racine :
-   ```env
-   # France Travail API Credentials
-   FRANCE_TRAVAIL_CLIENT_ID=votre_client_id
-   FRANCE_TRAVAIL_CLIENT_SECRET=votre_client_secret
-   
-   # Paramètres du serveur
-   DEBUG=True
-   PORT=5000
-   ```
-
-2. Obtenez vos identifiants sur [France Travail Dev](https://www.emploi-store-dev.fr/)
-
-## 🚀 Lancement du serveur
-
-```bash
-python app.py
-```
-
-Le serveur sera accessible sur : http://localhost:5000
-
-## 🌐 API Endpoints
-
-### 1. Recherche d'offres
-```
-GET /api/search_jobs?q=serveur&location=75056&max_results=10
-```
-
-### 2. Détails d'un métier
-```
-GET /api/job_details/G1603
-```
-
-### 3. Matching de compétences
-```
-POST /api/match_skills
-{
-    "rome_code": "G1603",
-    "skills": ["accueil", "service", "hygiène"]
-}
-```
-
-### 4. Offres à Paris
-```
-GET /api/paris_jobs/serveur
-```
-
-## 💡 Exemples d'utilisation
-
-### Recherche d'offres
-```bash
-curl "http://localhost:5000/api/search_jobs?q=serveur&max_results=5"
-```
-
-### Matching de compétences
-```bash
-curl -X POST http://localhost:5000/api/match_skills \
-  -H "Content-Type: application/json" \
-  -d '{
-    "rome_code": "G1603",
-    "skills": ["accueil", "service", "hygiène"]
-  }'
-```
-
-## 🛠️ Structure du projet
-
-```
-.
-├── app.py                 # Serveur Flask principal
-├── france_travail/
-│   ├── __init__.py
-│   ├── alternative_client.py  # Client API France Travail
-│   └── rome4_api.py          # Client ROME 4.0
-├── .env.example           # Exemple de configuration
-└── requirements.txt       # Dépendances
-```
-
-## 🔍 Comment ça marche ?
-
-1. Le serveur utilise l'API officielle France Travail
-2. Les requêtes sont authentifiées avec OAuth2
-3. Les compétences sont analysées avec des algorithmes de similarité
-4. Les résultats sont retournés en JSON
-
-## 🚨 Dépannage
-
-### Erreurs courantes
-- **401 Unauthorized** : Vérifiez vos identifiants API
-- **429 Too Many Requests** : Attendez avant de réessayer
-- **500 Server Error** : Consultez les logs du serveur
-
-### Logs de débogage
-Activez les logs détaillés :
-```python
-import logging
-logging.basicConfig(level=logging.INFO)
-```
-
-## 🤝 Contribution
-
-1. Forkez le projet
-2. Créez une branche (`git checkout -b feature/AmazingFeature`)
-3. Committez vos modifications (`git commit -m 'Add some AmazingFeature'`)
-4. Poussez vers la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrez une Pull Request
-
-## 📄 Licence
-
-Distribué sous licence MIT. Voir `LICENSE` pour plus d'informations.
-
----
-
-Développé avec ❤️ par [Votre Nom] - [@votretwitter](https://twitter.com/votretwitter)
-
-[Lien du projet](https://github.com/douuvid/Api_Final)
 
 ### Option 2 : Installation à partir des sources
 
@@ -459,130 +264,17 @@ Pour plus d'informations sur les paramètres de recherche disponibles, consultez
 - `secteurActivite` : Secteur d'activité
 - `range` : Pagination (ex: "0-9" pour les 10 premiers résultats)
 
-## Méthodes disponibles
-
-#### `search_jobs(params: Optional[Dict[str, Any]] = None) -> Optional[Dict]`
-
-Recherche des offres d'emploi selon les critères spécifiés.
-
-**Paramètres :**
-- `params` (dict, optionnel) : Dictionnaire des paramètres de recherche. Les clés possibles sont :
-  - `motsCles` (str) : Mots-clés pour la recherche
-  - `commune` (str) : Code INSEE de la commune
-  - `distance` (int) : Rayon de recherche en kilomètres
-  - `typeContrat` (str) : Type de contrat (CDI, CDD, etc.)
-  - `experience` (str) : Niveau d'expérience requis
-  - `qualification` (str) : Niveau de qualification
-  - `secteurActivite` (str) : Secteur d'activité
-  - `entrepriseAdaptee` (bool) : Entreprise adaptée
-  - `range` (str) : Plage de résultats (ex: "0-9" pour les 10 premiers résultats)
-
-**Retourne :**
-- Un dictionnaire contenant les résultats de la recherche ou None en cas d'erreur
-
-#### `get_job_details(job_id: str) -> Optional[Dict]`
-
-Récupère les détails d'une offre d'emploi spécifique.
-
-**Paramètres :**
-- `job_id` (str) : Identifiant de l'offre d'emploi
-
-**Retourne :**
-- Un dictionnaire contenant les détails de l'offre ou None en cas d'erreur
-
-#### `match_soft_skills(rome_code: str, skills: list) -> Optional[Dict]`
-
-Évalue la correspondance entre des compétences douces et un métier spécifique.
-
-**Paramètres :**
-- `rome_code` (str) : Code ROME du métier cible (ex: 'M1805' pour Développeur informatique)
-- `skills` (list) : Liste des compétences douces à évaluer (ex: ['communication', 'travail d\'équipe'])
-
-**Retourne :**
-Un dictionnaire contenant :
-- `match_score` (float) : Score global de correspondance (entre 0 et 1)
-- `matching_skills` (list) : Liste des compétences pertinentes trouvées
-- `missing_skills` (list) : Liste des compétences importantes manquantes
-- `recommendations` (list) : Suggestions pour améliorer le matching
-
-Retourne None en cas d'erreur.
-
-## Exemples d'utilisation
-
-### 1. Recherche d'offres d'emploi
-
-```python
-from france_travail.alternative_client import FranceTravailAlternativeAPI
-
-# Initialisation du client
-api = FranceTravailAlternativeAPI(
-    client_id="votre_client_id",
-    client_secret="votre_client_secret"
-)
-
-# Obtenir les détails d'un métier par code ROME (ex: M1805 pour développeur)
-job_details = api.get_job_details_by_rome("M1805")
-print(f"Détails du métier: {job_details}")
-```
-
-### 2. Matching de compétences
-
-```python
-# Compétences de l'utilisateur
-mes_competences = ["python", "travail d'équipe", "javascript", "communication"]
-
-# Faire correspondre avec un métier
-resultat = api.match_soft_skills("M1805", mes_competences)
-
-print(f"Score de correspondance: {resultat['match_score']*100}%")
-print(f"Compétences correspondantes: {resultat['matches']}")
-print(f"Compétences manquantes: {resultat['missing_skills']}")
-```
-
-### 3. Extraire les compétences d'offres d'emploi
-
-```python
-# Récupérer des offres d'emploi
-offres = api.get_job_details_by_rome("M1805")['offers_sample']
-
-# Extraire les compétences des offres
-competences = api.extract_skills_from_offers(offres)
-print(f"Compétences requises: {competences}")
-    print("\nCompétences à développer:")
-    for comp in resultats.get('missing_skills', []):
-        print(f"- {comp}")
-```
-
-## Fonctionnalités principales
-
-### 1. Client Alternatif (`FranceTravailAlternativeAPI`)
-
-- `get_job_details_by_rome(rome_code)` : Récupère les détails d'un métier par son code ROME
-- `match_soft_skills(rome_code, user_skills)` : Fait correspondre les compétences utilisateur avec un métier
-- `extract_skills_from_offers(offers)` : Extrait les compétences clés d'une liste d'offres
-- `_similarity_score(str1, str2)` : Calcule la similarité entre deux chaînes
-
-### 2. Client ROME 4.0 (`FranceTravailROME4API`)
-- Accès aux référentiels ROME 4.0
-- Récupération des fiches métiers détaillées
-- Gestion de l'authentification OAuth2
-
 ## Dépannage
 
-### Erreurs courantes
+### Erreur d'authentification
+- Vérifiez que votre client ID et client secret sont corrects
+- Assurez-vous que votre compte développeur est actif
+- Vérifiez que vous avez les bonnes autorisations (scopes)
 
-1. **Erreur 401** : Vérifiez vos identifiants API
-2. **Erreur 206** : Réponse partielle, le traitement se fait normalement
-3. **Erreur 429** : Trop de requêtes, attendez avant de réessayer
-
-### Journaux de débogage
-
-Activez les logs détaillés avec :
-
-```python
-import logging
-logging.basicConfig(level=logging.INFO)
-```
+### Aucun résultat trouvé
+- Élargissez les critères de recherche
+- Vérifiez l'orthographe des mots-clés
+- Essayez avec des termes plus génériques
 
 ### Problèmes courants
 - `400 Bad Request` : Vérifiez la validité des paramètres de recherche
@@ -595,19 +287,9 @@ Les contributions sont les bienvenues ! Voici comment contribuer :
 
 1. Forkez le projet
 2. Créez une branche pour votre fonctionnalité (`git checkout -b feature/ma-fonctionnalite`)
-3. Committez vos modifications (`git commit -m 'Ajouter une fonctionnalité'`)
+3. Committez vos changements (`git commit -am 'Ajout d\'une fonctionnalité'`)
 4. Poussez vers la branche (`git push origin feature/ma-fonctionnalite`)
-5. Ouvrez une Pull Request
-
-## Licence
-
-Distribué sous licence MIT. Voir `LICENSE` pour plus d'informations.
-
-## Contact
-
-Votre Nom - [@votretwitter](https://twitter.com/votretwitter)
-
-Lien du projet : [https://github.com/douuvid/Api_Final](https://github.com/douuvid/Api_Final)
+5. Créez une Pull Request
 
 ## Licence
 

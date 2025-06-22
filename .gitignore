@@ -51,3 +51,12 @@ htmlcov/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Exemples et tests
+/examples/
+/tests/
+
+# Fichiers spécifiques
+/france_travail/alternative_client.py
+/france_travail/client.py
+/france_travail/utils.py
