@@ -3,7 +3,11 @@
 [![Python Version](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Ce client Python permet d'interagir avec l'API France Travail (anciennement Pôle Emploi) pour rechercher des offres d'emploi et obtenir des détails sur des offres spécifiques.
+Ce client Python permet d'interagir avec l'API France Travail (anciennement Pôle Emploi) pour :
+- Rechercher des offres d'emploi
+- Obtenir des détails sur des offres spécifiques
+- Faire du matching de compétences entre un profil et les offres d'emploi
+- Analyser les compétences requises par métier (code ROME)
 
 ## Table des matières
 
@@ -22,6 +26,7 @@ Ce client Python permet d'interagir avec l'API France Travail (anciennement Pôl
 - Python 3.6 ou supérieur
 - Compte développeur France Travail (Pôle Emploi)
 - Identifiants API (client ID et client secret)
+- Bibliothèques requises : `requests`, `python-dotenv`
 
 ## Installation
 
@@ -32,9 +37,23 @@ Ce client Python permet d'interagir avec l'API France Travail (anciennement Pôl
 python -m venv venv
 source venv/bin/activate  # Sur Windows: venv\Scripts\activate
 
-# Installer le package
-pip install france-travail-api
+# Installer les dépendances
+pip install requests python-dotenv
+
+# Cloner le dépôt
+git clone https://github.com/douuvid/Api_Final.git
+cd Api_Final
 ```
+
+### Configuration
+
+1. Créez un fichier `.env` à la racine du projet :
+```env
+FRANCE_TRAVAIL_CLIENT_ID=votre_client_id
+FRANCE_TRAVAIL_CLIENT_SECRET=votre_client_secret
+```
+
+2. Obtenez vos identifiants sur [le portail France Travail](https://www.emploi-store-dev.fr/)
 
 ### Option 2 : Installation à partir des sources
 
@@ -312,46 +331,82 @@ Un dictionnaire contenant :
 
 Retourne None en cas d'erreur.
 
-**Exemple d'utilisation :**
+## Exemples d'utilisation
+
+### 1. Recherche d'offres d'emploi
 
 ```python
-from france_travail import FranceTravailAPI
+from france_travail.alternative_client import FranceTravailAlternativeAPI
 
 # Initialisation du client
-api = FranceTravailAPI(client_id, client_secret)
+api = FranceTravailAlternativeAPI(
+    client_id="votre_client_id",
+    client_secret="votre_client_secret"
+)
 
-# Compétences à évaluer
-competences = [
-    'communication',
-    'travail d\'équipe',
-    'résolution de problèmes',
-    'autonomie',
-    'créativité'
-]
+# Obtenir les détails d'un métier par code ROME (ex: M1805 pour développeur)
+job_details = api.get_job_details_by_rome("M1805")
+print(f"Détails du métier: {job_details}")
+```
 
-# Appel de l'API
-resultats = api.match_soft_skills('M1805', competences)
+### 2. Matching de compétences
 
-# Affichage des résultats
-if resultats:
-    print(f"Score de correspondance: {resultats.get('match_score', 0):.0%}")
-    print("\nCompétences pertinentes:")
-    for comp in resultats.get('matching_skills', []):
-        print(f"- {comp}")
+```python
+# Compétences de l'utilisateur
+mes_competences = ["python", "travail d'équipe", "javascript", "communication"]
+
+# Faire correspondre avec un métier
+resultat = api.match_soft_skills("M1805", mes_competences)
+
+print(f"Score de correspondance: {resultat['match_score']*100}%")
+print(f"Compétences correspondantes: {resultat['matches']}")
+print(f"Compétences manquantes: {resultat['missing_skills']}")
+```
+
+### 3. Extraire les compétences d'offres d'emploi
+
+```python
+# Récupérer des offres d'emploi
+offres = api.get_job_details_by_rome("M1805")['offers_sample']
+
+# Extraire les compétences des offres
+competences = api.extract_skills_from_offers(offres)
+print(f"Compétences requises: {competences}")
     print("\nCompétences à développer:")
     for comp in resultats.get('missing_skills', []):
         print(f"- {comp}")
 ```
 
-### Erreur d'authentification
-- Vérifiez que votre client ID et client secret sont corrects
-- Assurez-vous que votre compte développeur est actif
-- Vérifiez que vous avez les bonnes autorisations (scopes)
+## Fonctionnalités principales
 
-### Aucun résultat trouvé
-- Élargissez les critères de recherche
-- Vérifiez l'orthographe des mots-clés
-- Essayez avec des termes plus génériques
+### 1. Client Alternatif (`FranceTravailAlternativeAPI`)
+
+- `get_job_details_by_rome(rome_code)` : Récupère les détails d'un métier par son code ROME
+- `match_soft_skills(rome_code, user_skills)` : Fait correspondre les compétences utilisateur avec un métier
+- `extract_skills_from_offers(offers)` : Extrait les compétences clés d'une liste d'offres
+- `_similarity_score(str1, str2)` : Calcule la similarité entre deux chaînes
+
+### 2. Client ROME 4.0 (`FranceTravailROME4API`)
+- Accès aux référentiels ROME 4.0
+- Récupération des fiches métiers détaillées
+- Gestion de l'authentification OAuth2
+
+## Dépannage
+
+### Erreurs courantes
+
+1. **Erreur 401** : Vérifiez vos identifiants API
+2. **Erreur 206** : Réponse partielle, le traitement se fait normalement
+3. **Erreur 429** : Trop de requêtes, attendez avant de réessayer
+
+### Journaux de débogage
+
+Activez les logs détaillés avec :
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)
+```
 
 ### Problèmes courants
 - `400 Bad Request` : Vérifiez la validité des paramètres de recherche
@@ -364,9 +419,19 @@ Les contributions sont les bienvenues ! Voici comment contribuer :
 
 1. Forkez le projet
 2. Créez une branche pour votre fonctionnalité (`git checkout -b feature/ma-fonctionnalite`)
-3. Committez vos changements (`git commit -am 'Ajout d\'une fonctionnalité'`)
+3. Committez vos modifications (`git commit -m 'Ajouter une fonctionnalité'`)
 4. Poussez vers la branche (`git push origin feature/ma-fonctionnalite`)
-5. Créez une Pull Request
+5. Ouvrez une Pull Request
+
+## Licence
+
+Distribué sous licence MIT. Voir `LICENSE` pour plus d'informations.
+
+## Contact
+
+Votre Nom - [@votretwitter](https://twitter.com/votretwitter)
+
+Lien du projet : [https://github.com/douuvid/Api_Final](https://github.com/douuvid/Api_Final)
 
 ## Licence
 
