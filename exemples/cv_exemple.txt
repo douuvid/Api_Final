@@ -1,0 +1,33 @@
+DÉVELOPPEUR FULLSTACK SENIOR
+
+Compétences Techniques :
+- Langages: Python, JavaScript, TypeScript, SQL
+- Frameworks: React, Node.js, Django, Flask
+- Outils: Git, Docker, AWS, CI/CD
+- Bases de données: PostgreSQL, MongoDB, Redis
+
+Expérience Professionnelle :
+
+Développeur Fullstack - Entreprise Tech (2020-2023)
+- Développement d'applications web avec React et Node.js
+- Architecture microservices avec Docker et Kubernetes
+- Mise en place de pipelines CI/CD
+
+Développeur Backend - Startup (2018-2020)
+- API REST avec Django et Flask
+- Optimisation de requêtes SQL
+- Intégration de services AWS
+
+Formation :
+Master en Informatique - Université Paris (2016-2018)
+Licence en Informatique - Université Lyon (2013-2016)
+
+Compétences Douces :
+- Travail d'équipe et collaboration
+- Résolution de problèmes complexes
+- Communication claire et efficace
+- Gestion de projet Agile/Scrum
+
+Langues :
+- Anglais (courant)
+- Espagnol (intermédiaire)
