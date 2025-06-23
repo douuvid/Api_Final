@@ -1,300 +1,71 @@
-# Client API France Travail (Pôle Emploi)
+# Projet d'Intégration API France Travail
 
-[![Python Version](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Ce projet permet de rechercher des offres d'emploi en utilisant l'API de France Travail (anciennement Pôle Emploi).
 
-Ce client Python permet d'interagir avec l'API France Travail (anciennement Pôle Emploi) pour rechercher des offres d'emploi et obtenir des détails sur des offres spécifiques.
-
-## Table des matières
-
-1. [Prérequis](#prérequis)
-2. [Installation](#installation)
-3. [Configuration](#configuration)
-4. [Utilisation](#utilisation)
-5. [Exemples](#exemples)
-6. [Documentation de l'API](#documentation-de-lapi)
-7. [Dépannage](#dépannage)
-8. [Contribution](#contribution)
-9. [Licence](#licence)
-
-## Prérequis
-
-- Python 3.6 ou supérieur
-- Compte développeur France Travail (Pôle Emploi)
-- Identifiants API (client ID et client secret)
-
-## Installation
-
-### Option 1 : Installation via pip (recommandé)
-
-```bash
-# Créer un environnement virtuel (recommandé)
-python -m venv venv
-source venv/bin/activate  # Sur Windows: venv\Scripts\activate
-
-# Installer le package
-pip install france-travail-api
-```
-
-### Option 2 : Installation à partir des sources
-
-```bash
-# Cloner le dépôt
-git clone https://github.com/votre-utilisateur/france-travail-api.git
-cd france-travail-api
-
-# Créer et activer un environnement virtuel
-python -m venv venv
-source venv/bin/activate  # Sur Windows: venv\Scripts\activate
-
-# Installer en mode développement
-pip install -e .
-
-# Installer les dépendances de développement
-pip install -r requirements-dev.txt
-```
-
-## Configuration
-
-1. **Obtenir des identifiants API** :
-   - Allez sur le [Portail Développeur France Travail](https://www.emploi-store-dev.fr/)
-   - Créez un compte si ce n'est pas déjà fait
-   - Créez une nouvelle application pour obtenir vos identifiants (client ID et client secret)
-
-2. **Configurer les variables d'environnement** :
-   - Créez un fichier `.env` à la racine du projet
-   - Ajoutez vos identifiants :
-     ```
-     FRANCE_TRAVAIL_CLIENT_ID=votre_client_id
-     FRANCE_TRAVAIL_CLIENT_SECRET=votre_client_secret
-     ```
-
-## Utilisation
-
-### Initialisation du client
-
-```python
-from france_travail import FranceTravailAPI
-
-# Initialiser le client avec vos identifiants
-client = FranceTravailAPI(
-    client_id="votre_client_id",
-    client_secret="votre_client_secret"
-)
-
-# Ou utiliser les variables d'environnement (recommandé)
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-client = FranceTravailAPI(
-    client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
-    client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET")
-)
-```
-
-### Authentification
-
-```python
-# S'authentifier
-if client.authenticate():
-    print("Authentification réussie !")
-else:
-    print("Échec de l'authentification. Vérifiez vos identifiants.")
-```
-
-### Recherche d'offres d'emploi
-
-```python
-# Paramètres de recherche
-params = {
-    'motsCles': 'développeur python',  # Mots-clés de recherche
-    'typeContrat': 'CDI,CDD',           # Types de contrat (optionnel)
-    'range': '0-9',                     # Pagination (10 premiers résultats)
-    'commune': '75056',                 # Code INSEE de la commune (optionnel)
-    'distance': '10',                   # Rayon de recherche en km (optionnel)
-}
-
-# Effectuer la recherche
-resultats = client.search_jobs(params)
-
-# Traiter les résultats
-if resultats and isinstance(resultats, list):
-    print(f"{len(resultats)} offres trouvées")
-    for offre in resultats[:5]:  # Afficher les 5 premières offres
-        print(f"\n--- {offre.get('intitule')} ---")
-        print(f"Entreprise: {offre.get('entreprise', {}).get('nom', 'Non spécifié')}")
-        print(f"Lieu: {offre.get('lieuTravail', {}).get('libelle', 'Non spécifié')}")
-        print(f"Type de contrat: {offre.get('typeContrat', 'Non spécifié')}")
-```
-
-### Obtenir les détails d'une offre spécifique
-
-```python
-# ID de l'offre (obtenu via la recherche)
-offre_id = "1234567890"
-
-# Récupérer les détails
-details = client.get_job_details(offre_id)
-
-if details:
-    print(f"\n=== DÉTAILS DE L'OFFRE ===")
-    print(f"Titre: {details.get('intitule')}")
-    print(f"Entreprise: {details.get('entreprise', {}).get('nom', 'Non spécifié')}")
-    print(f"Lieu: {details.get('lieuTravail', {}).get('libelle', 'Non spécifié')}")
-    print(f"Type de contrat: {details.get('typeContrat', 'Non spécifié')}")
-    print(f"Date de publication: {details.get('dateCreation', 'Non spécifiée')}")
-    print(f"Salaire: {details.get('salaire', {}).get('libelle', 'Non spécifié')}")
-    print(f"Expérience: {details.get('experienceLibelle', 'Non spécifiée')}")
-    print("\nDescription du poste:")
-    print(details.get('description', 'Aucune description disponible'))
-    
-    # Afficher les compétences requises
-    competences = details.get('competences', [])
-    if competences:
-        print("\nCompétences requises:")
-        for comp in competences:
-            print(f"- {comp.get('libelle', '')}")
-    
-    # Lien vers l'offre
-    print(f"\nPour postuler: https://candidat.pole-emploi.fr/offres/emploi/detail/{offre_id}")
-```
-
-## Exemples
-
-Le répertoire `examples/` contient des scripts d'exemple :
-
-- `basic_usage.py` : Exemple de base d'utilisation de l'API
-- `recherche_developpeur_test.py` : Exemple de recherche d'offres pour "Développeur Test"
-
-Pour exécuter un exemple :
-
-```bash
-# Se placer dans le répertoire racine du projet
-cd france-travail-api
-
-# Exécuter un exemple
-python examples/recherche_developpeur_test.py
-```
-
-## Limites d'API
-
-France Travail applique des limites de débit (rate limiting) pour chaque API. Voici les principales limites à connaître :
-
-| API | Version | Limite | Description |
-|-----|---------|--------|-------------|
-| Offres d'emploi | v2 | 10 appels/seconde | Pour la recherche et la consultation des offres d'emploi |
-| ROMEO | v2 | 2 appels/seconde | Pour la recherche d'entreprises |
-| La Bonne Boite | v2 | 2 appels/seconde | Pour la recherche d'entreprises qui recrutent |
-| Match via Soft Skills | v1 | 1 appel/seconde | Pour le matching par compétences |
-
-### Bonnes pratiques
-
-1. **Respectez les limites** : Le non-respect des limites peut entraîner un blocage temporaire.
-2. **Implémentez un système de file d'attente** : Pour gérer les appaux API de manière optimale.
-3. **Mettez en cache les réponses** : Pour réduire le nombre d'appaux inutiles.
-4. **Gérez les erreurs 429** : En cas de dépassement, attendez avant de réessayer.
-
-## Base de données
-
-Le module `database` fournit une interface complète pour gérer les utilisateurs et leurs données dans une base de données PostgreSQL.
-
-### Configuration
-
-1. Assurez-vous que PostgreSQL est installé et en cours d'exécution
-2. Créez un fichier `.env` à la racine du projet avec les informations de connexion :
-   ```env
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_NAME=job_search_app
-   DB_USER=postgres
-   DB_PASSWORD=votre_mot_de_passe
-   ```
-
-### Utilisation de base
-
-```python
-from database import UserDatabase
-
-# Initialisation
-db = UserDatabase(
-    host="localhost",
-    database="job_search_app",
-    user="postgres",
-    password="votre_mot_de_passe"
-)
-
-# Création des tables (à exécuter une seule fois)
-if db.connect():
-    db.create_tables()
-
-# Création d'un utilisateur
-user_data = {
-    'email': 'utilisateur@example.com',
-    'password': 'MotDePasseSécurisé123!',
-    'first_name': 'Prénom',
-    'last_name': 'Nom',
-    'phone': '+33612345678'
-}
-user_id, token = db.create_user(user_data)
-```
-
-### Fonctionnalités clés
-
-- Gestion des utilisateurs (création, authentification, mise à jour)
-- Gestion des compétences (ajout, suppression, recherche)
-- Suivi des expériences professionnelles
-- Gestion des formations
-- Sécurité intégrée (hachage des mots de passe, protection contre les attaques par force brute)
-
-Pour plus de détails, consultez la [documentation complète du module database](database/README.md).
-
-## Documentation de l'API
-
-Pour plus d'informations sur les paramètres de recherche disponibles, consultez la [documentation officielle de l'API France Travail](https://www.emploi-store-dev.fr/).
-
-### Paramètres de recherche courants
-
-- `motsCles` : Mots-clés de recherche (ex: "développeur python")
-- `typeContrat` : Type de contrat (CDI, CDD, etc.)
-- `commune` : Code INSEE de la commune
-- `distance` : Rayon de recherche en km (autour de la commune)
-- `experience` : Niveau d'expérience requis
-- `qualification` : Niveau de qualification
-- `secteurActivite` : Secteur d'activité
-- `range` : Pagination (ex: "0-9" pour les 10 premiers résultats)
-
-## Dépannage
-
-### Erreur d'authentification
-- Vérifiez que votre client ID et client secret sont corrects
-- Assurez-vous que votre compte développeur est actif
-- Vérifiez que vous avez les bonnes autorisations (scopes)
-
-### Aucun résultat trouvé
-- Élargissez les critères de recherche
-- Vérifiez l'orthographe des mots-clés
-- Essayez avec des termes plus génériques
-
-### Problèmes courants
-- `400 Bad Request` : Vérifiez la validité des paramètres de recherche
-- `401 Unauthorized` : Votre token a peut-être expiré, réauthentifiez-vous
-- `429 Too Many Requests` : Vous avez dépassé la limite de requêtes, attendez avant de réessayer
-
-## Contribution
-
-Les contributions sont les bienvenues ! Voici comment contribuer :
-
-1. Forkez le projet
-2. Créez une branche pour votre fonctionnalité (`git checkout -b feature/ma-fonctionnalite`)
-3. Committez vos changements (`git commit -am 'Ajout d\'une fonctionnalité'`)
-4. Poussez vers la branche (`git push origin feature/ma-fonctionnalite`)
-5. Créez une Pull Request
-
-## Licence
-
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+Il peut être utilisé de deux manières :
+1.  En ligne de commande (CLI) pour des recherches rapides dans le terminal.
+2.  En tant que serveur web pour des requêtes via un navigateur ou une autre application.
 
 ---
 
-Développé avec ❤️ pour faciliter l'accès aux offres d'emploi de France Travail.
+## 1. Prérequis
+
+-   Python 3 installé sur votre machine.
+-   Un fichier `.env` à la racine du projet contenant vos identifiants API :
+
+    ```
+    FRANCE_TRAVAIL_CLIENT_ID=VOTRE_CLIENT_ID
+    FRANCE_TRAVAIL_CLIENT_SECRET=VOTRE_CLIENT_SECRET
+    ```
+
+---
+
+## 2. Installation
+
+Ouvrez un terminal dans le dossier du projet et installez les dépendances nécessaires avec la commande suivante :
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+---
+
+## 3. Utilisation
+
+### A. Recherche en Ligne de Commande (CLI)
+
+C'est le mode le plus simple pour trouver des offres rapidement.
+
+**Syntaxe :**
+```bash
+python3 app.py --motsCles "<le métier>" --departement <numéro_département>
+```
+
+**Exemples :**
+
+-   Pour chercher un poste de "Product Owner" à Paris :
+    ```bash
+    python3 app.py --motsCles "product owner" --departement 75
+    ```
+
+-   Pour chercher un poste de "vendeur" dans les Bouches-du-Rhône :
+    ```bash
+    python3 app.py --motsCles "vendeur" --departement 13
+    ```
+
+**Arguments disponibles :**
+-   `--motsCles`: Le métier ou les compétences (obligatoire).
+-   `--departement`: Le numéro du département.
+-   `--commune`: Le code INSEE de la commune.
+-   `--range`: La plage de résultats (ex: `0-10`). Par défaut, les 5 premières offres sont affichées.
+
+### B. Lancement du Serveur Web
+
+Si vous n'utilisez aucun argument, le script lancera un serveur web local.
+
+**Commande :**
+```bash
+python3 app.py
+```
+
+Le serveur sera alors accessible à l'adresse `http://127.0.0.1:5000`.

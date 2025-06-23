@@ -48,6 +48,17 @@ htmlcov/
 .DS_Store?
 ._*
 .Spotlight-V100
+
+# Fichiers de sauvegarde
+*.bak
+
+# Dossier d'archivage
+archive/
+
+# Fichiers redondants
+france_travail/requirements.txt
+france_travail/setup.py
+client_fix.py
 .Trashes
 ehthumbs.db
 Thumbs.db
@@ -58,5 +69,5 @@ Thumbs.db
 
 # Fichiers spécifiques
 /france_travail/alternative_client.py
-/france_travail/client.py
+
 /france_travail/utils.py
