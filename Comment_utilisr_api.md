@@ -73,11 +73,48 @@ Si vous avez un intitulé de poste et que vous voulez trouver le code ROME offic
 
 **Syntaxe :**
 ```bash
-python app.py romeo "<intitulé_du_poste>"
+python app.py romeo "<intitulé_du_poste>" [--nb <nombre>]
 ```
 
 **Exemple :**
 ```bash
 # Trouver le code ROME pour "Responsable marketing digital"
-python app.py romeo "Responsable marketing digital"
+python app.py romeo "Responsable marketing digital" --nb 5
+```
+
+---
+
+### 5. Consulter les contextes de travail (API ROME V4.0)
+
+Cette commande permet d'interagir avec le référentiel des situations de travail pour obtenir des détails sur les conditions, lieux, horaires, etc.
+
+**Note :** Cette fonctionnalité nécessite que votre application soit abonnée au produit API "ROME V4.0 - Situations de travail" dans votre espace développeur France Travail.
+
+#### Lister tous les contextes
+
+Pour obtenir la liste complète de tous les contextes de travail disponibles.
+
+```bash
+python app.py contexte list
+```
+
+Vous pouvez choisir de ne retourner que certains champs :
+```bash
+python app.py contexte list --champs "libelle,code"
+```
+
+#### Obtenir les détails d'un contexte spécifique
+
+Pour voir les informations d'un contexte précis grâce à son code.
+
+```bash
+python app.py contexte get 403091
+```
+
+#### Vérifier la version du référentiel
+
+Pour connaître la version actuelle du référentiel ROME utilisé par l'API.
+
+```bash
+python app.py contexte version
 ```

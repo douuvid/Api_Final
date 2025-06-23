@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, Response
-from france_travail.api import OffresClient, LBBClient, RomeoClient, SoftSkillsClient
+from france_travail.api import OffresClient, LBBClient, RomeoClient, SoftSkillsClient, ContexteTravailClient
 from france_travail.cv_parser import CVParser
 from dotenv import load_dotenv
 import os
@@ -41,12 +41,18 @@ try:
         client_secret=client_secret,
         simulation=False
     )
+    contexte_client = ContexteTravailClient(
+        client_id=client_id,
+        client_secret=client_secret,
+        simulation=False
+    )
 except ValueError as e:
     print(f"ERREUR: Impossible d'initialiser les clients API. {e}")
     offres_client = None
     lbb_client = None
     romeo_client = None
     soft_skills_client = None
+    contexte_client = None
 
 
 # --- Fonctions d'aide pour l'affichage en console ---
@@ -109,26 +115,53 @@ def print_cv_match_results(details):
 
 def print_lbb_results(params, results):
     """Formate et affiche les résultats de La Bonne Boite."""
-    if results and results.get('entreprises'):
+    if results and results.get('companies'):
         output = []
-        total_results = len(results.get('entreprises', []))
-        output.append(f"\n{total_results} ENTREPRISES À FORT POTENTIEL TROUVÉES")
-        output.append(f"Paramètres: {params}")
-        output.append("=" * 60)
-        
-        for i, entreprise in enumerate(results.get('entreprises', [])):
+        total_results = len(results.get('companies', []))
+        output.append(f"\n{total_results} ENTREPRISES TROUVÉES POUR : {params}")
+        output.append("=" * 50)
+        for i, entreprise in enumerate(results.get('companies', [])):
             output.append(f"\n--- Entreprise n°{i+1} ---")
-            output.append(f"Nom         : {entreprise.get('nom', 'N/A')}")
+            output.append(f"Nom         : {entreprise.get('name', 'N/A')}")
+            output.append(f"Adresse     : {entreprise.get('address', 'N/A')}")
             output.append(f"SIRET       : {entreprise.get('siret', 'N/A')}")
-            output.append(f"Adresse     : {entreprise.get('adresse', 'N/A')}")
-            output.append(f"Code Postal : {entreprise.get('code_postal', 'N/A')}")
-            output.append(f"Ville       : {entreprise.get('ville', 'N/A')}")
-            output.append(f"Confiance   : {entreprise.get('taux_confiance', 'N/A')}")
-        
-        output.append("\n" + "=" * 60)
+            output.append(f"Score       : {entreprise.get('score', 'N/A')}")
+            output.append(f"Contact     : {entreprise.get('contactMode', 'N/A')}")
+        output.append("\n" + "=" * 50)
         print("\n".join(output))
     else:
-        print("\nAucune entreprise trouvée ou une erreur est survenue avec l'API.")
+        print("\nAucune entreprise trouvée ou une erreur est survenue avec l'API LBB.")
+
+def print_contexte_list(contextes):
+    """Affiche une liste de contextes de travail."""
+    if not contextes:
+        print("Aucun contexte de travail trouvé.")
+        return
+    print(f"\n--- {len(contextes)} Contextes de travail trouvés ---")
+    for ctx in contextes:
+        print(f"- {ctx.get('libelle')} (Code: {ctx.get('code')}, Catégorie: {ctx.get('categorie')})")
+    print("------------------------------------------")
+
+def print_contexte_details(contexte):
+    """Affiche les détails d'un contexte de travail."""
+    if not contexte:
+        print("Contexte de travail non trouvé.")
+        return
+    print("\n--- Détails du contexte de travail ---")
+    print(f"  Libellé   : {contexte.get('libelle')}")
+    print(f"  Code      : {contexte.get('code')}")
+    print(f"  Catégorie : {contexte.get('categorie')}")
+    print("------------------------------------")
+
+def print_version(version_data):
+    """Affiche les informations de version du ROME."""
+    if not version_data:
+        print("Impossible de récupérer les informations de version.")
+        return
+    print("\n--- Version du référentiel ROME ---")
+    print(f"  Version            : {version_data.get('version')}")
+    print(f"  Date de modification : {version_data.get('lastModifiedDate')}")
+    print("------------------------------------")
 
 
 # --- Endpoints Flask (pour une utilisation web future) ---
@@ -232,11 +265,35 @@ def handle_romeo(args):
         logging.error(f"Une erreur est survenue lors de l'appel à l'API ROMEO: {e}")
         print(f"Une erreur est survenue : {e}")
 
+def handle_contexte(args):
+    """Gère la commande 'contexte' et ses sous-commandes."""
+    if args.subcommand == 'list':
+        try:
+            results = contexte_client.lister_contextes(champs=args.champs)
+            print_contexte_list(results)
+        except Exception as e:
+            logging.error(f"Erreur lors de la récupération des contextes: {e}")
+            print(f"Une erreur est survenue: {e}")
+    elif args.subcommand == 'get':
+        try:
+            results = contexte_client.lire_contexte(code=args.code, champs=args.champs)
+            print_contexte_details(results)
+        except Exception as e:
+            logging.error(f"Erreur lors de la récupération du contexte {args.code}: {e}")
+            print(f"Une erreur est survenue: {e}")
+    elif args.subcommand == 'version':
+        try:
+            results = contexte_client.lire_version()
+            print_version(results)
+        except Exception as e:
+            logging.error(f"Erreur lors de la récupération de la version: {e}")
+            print(f"Une erreur est survenue: {e}")
+
 def main():
     """Point d'entrée principal pour l'application CLI."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    if not offres_client or not lbb_client or not romeo_client or not soft_skills_client:
+    if not offres_client or not lbb_client or not romeo_client or not soft_skills_client or not contexte_client:
         sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Client pour les API de France Travail.")
@@ -273,6 +330,25 @@ def main():
     parser_romeo.add_argument('--contexte', type=str, help="Contexte optionnel pour affiner la recherche (ex: 'artisanat').")
     parser_romeo.add_argument('--nb', type=int, default=3, help="Nombre de résultats à afficher (défaut: 3).")
     parser_romeo.set_defaults(func=handle_romeo)
+
+    # Commande 'contexte'
+    parser_contexte = subparsers.add_parser('contexte', help="Interagir avec l'API Contexte de Travail.")
+    contexte_subparsers = parser_contexte.add_subparsers(dest='subcommand', help='Sous-commandes pour contexte', required=True)
+
+    # Sous-commande 'contexte list'
+    parser_contexte_list = contexte_subparsers.add_parser('list', help='Lister tous les contextes de travail.')
+    parser_contexte_list.add_argument('--champs', type=str, help='Champs à retourner (ex: "libelle,code").')
+    parser_contexte_list.set_defaults(func=handle_contexte)
+
+    # Sous-commande 'contexte get'
+    parser_contexte_get = contexte_subparsers.add_parser('get', help='Lire un contexte de travail par son code.')
+    parser_contexte_get.add_argument('code', type=str, help='Code du contexte de travail.')
+    parser_contexte_get.add_argument('--champs', type=str, help='Champs à retourner (ex: "libelle,code").')
+    parser_contexte_get.set_defaults(func=handle_contexte)
+
+    # Sous-commande 'contexte version'
+    parser_contexte_version = contexte_subparsers.add_parser('version', help='Lire la version actuelle du ROME.')
+    parser_contexte_version.set_defaults(func=handle_contexte)
 
     args = parser.parse_args()
     args.func(args)

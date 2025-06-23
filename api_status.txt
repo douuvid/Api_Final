@@ -31,5 +31,14 @@ Ce document résume l'état d'intégration des différentes API France Travail d
 
 ### ✅ API Match via Soft Skills (v1)
 
-- **Statut** : Intégrée et testée
-- **Description** : Récupère les compétences comportementales (soft skills) pour un code ROME et les compare au contenu d'un CV. Le système de matching a été rendu robuste pour gérer les cas où l'API retourne des scores nuls.
+- **Statut** : Intégrée et fonctionnelle.
+- **Description** : L'API a été intégrée avec succès. Le client `SoftSkillsClient` a été créé et la logique de matching dans `OffresClient` a été mise à jour pour utiliser les données officielles. Les problèmes de score à zéro ont été contournés par une logique de fallback. La commande `match` est pleinement opérationnelle.
+- **Date** : 23/06/2025
+
+---
+
+### ❌ API ROME V4.0 - Situations de travail
+
+- **Statut** : Intégration bloquée (Authentification).
+- **Description** : Le client `ContexteTravailClient` a été créé et les commandes CLI (`contexte list`, `contexte get`, `contexte version`) ont été ajoutées. Cependant, l'API retourne une erreur `invalid_client`, indiquant que l'application n'est pas abonnée à ce produit API sur le portail développeur de France Travail. En attente de l'activation de l'abonnement par l'utilisateur.
+- **Date** : 23/06/2025
