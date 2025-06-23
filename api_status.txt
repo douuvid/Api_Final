@@ -1,0 +1,29 @@
+# État d'intégration des API France Travail
+
+Ce document résume l'état d'intégration des différentes API France Travail dans ce projet.
+
+---
+
+### ✅ API Offres d'emploi v2 & Analyse de CV
+
+- **Statut** : Intégrée et fonctionnelle.
+- **Commandes CLI** :
+  - `python app.py search` pour la recherche d'offres.
+  - `python app.py match` pour l'analyse de CV.
+
+---
+
+### ❌ API La Bonne Boite v1
+
+- **Statut** : Bloquée.
+- **Commande CLI** : `python app.py lbb`
+- **Problème** : Erreur d'authentification (`invalid_scope`).
+- **Action requise** : Vérifier que l'application est bien abonnée à cette API dans l'espace développeur France Travail. Le code est prêt, mais les droits d'accès semblent manquants.
+
+---
+
+### ✅ API ROMEO 4.0
+
+- **Statut** : Intégrée et testée.
+- **Commande CLI** : `python app.py romeo "<intitulé>"`
+- **Notes** : Permet de trouver des codes ROME à partir d'un intitulé de poste.

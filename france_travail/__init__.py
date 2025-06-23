@@ -5,7 +5,7 @@ A Python client for interacting with the France Travail API client.
 Inclut le support des APIs ROME 4.0 pour le matching de compétences.
 """
 
-from .client import FranceTravailAPI
+
 from .utils import afficher_offres, format_offre
 from .rome4_api import FranceTravailROME4API
 

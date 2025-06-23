@@ -1,64 +1,50 @@
 from flask import Flask, request, jsonify, Response
-from france_travail.client import FranceTravailAPI
+from france_travail.api import OffresClient, LBBClient, RomeoClient
 from france_travail.cv_parser import CVParser
 from dotenv import load_dotenv
 import os
 import sys
 import argparse
+import logging
 
 # Charger les variables d'environnement
 load_dotenv()
 
 app = Flask(__name__)
 
-# Initialiser le client API corrigé
+# Initialiser les clients API
 try:
-    api = FranceTravailAPI(
+    offres_client = OffresClient(
         client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
         client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET"),
-        simulation=False # S'assurer que le mode simulation est désactivé
+        simulation=False
+    )
+    lbb_client = LBBClient(
+        client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
+        client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET"),
+        simulation=False
+    )
+    romeo_client = RomeoClient(
+        client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
+        client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET"),
+        simulation=False
     )
 except ValueError as e:
-    # Gérer le cas où les identifiants ne sont pas configurés
-    api = None
-    print(f"ERREUR: Impossible d'initialiser l'API France Travail. {e}")
+    offres_client = None
+    lbb_client = None
+    romeo_client = None
+    print(f"ERREUR: Impossible d'initialiser les clients API. {e}")
 
 
-# L'endpoint 'match_skills' a été temporairement retiré car
-# la méthode correspondante n'existe pas dans le client API actuel.
-# Il faudra le réintégrer une fois la fonctionnalité implémentée.
+# --- Fonctions d'aide pour l'affichage en console ---
 
-@app.route('/api/job_details/<job_id>', methods=['GET'])
-def job_details(job_id):
-    """Récupère les détails d'une offre d'emploi par son ID."""
-    if not api:
-        return jsonify({"error": "L'API n'est pas configurée correctement."}), 503
-
-    try:
-        details = api.get_job_details(job_id)
-        if details:
-            return jsonify(details)
-        else:
-            return jsonify({"error": "Offre d'emploi non trouvée ou erreur API"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-def perform_and_print_search(params):
-    """
-    Fonction partagée pour effectuer une recherche et formater le résultat pour l'affichage.
-    """
-    if not api:
-        print("ERREUR: L'API n'est pas initialisée.")
-        return
-
-    results = api.search_jobs(params)
-    
+def print_search_results(params, results):
+    """Formate et affiche les résultats de recherche d'offres."""
     if results and results.get('resultats'):
         output = []
         total_results = len(results.get('resultats', []))
         output.append(f"\n{total_results} OFFRES TROUVÉES POUR : {params}")
         output.append("=" * 50)
-        
         for i, offre in enumerate(results.get('resultats', [])):
             output.append(f"\n--- Offre n°{i+1} ---")
             output.append(f"ID          : {offre.get('id', 'N/A')}")
@@ -74,96 +60,194 @@ def perform_and_print_search(params):
                 output.append(f"Salaire     : {salaire}")
             description = offre.get('description', 'N/A').replace('\n', ' ')
             output.append(f"Description : {description[:250]}...")
-        
         output.append("\n" + "=" * 50)
         print("\n".join(output))
     else:
         print("\nAucun résultat trouvé ou une erreur est survenue avec l'API.")
 
+def print_cv_match_results(details):
+    """Formate et affiche les résultats du matching de CV."""
+    if details:
+        print("\n--- Résultat de l'analyse ---")
+        print(f"Offre d'emploi : {details['job_title']}")
+        print(f"Taux de compatibilité : {details['matching_rate']:.2f}%")
+        print("\nCompétences détectées dans le CV :")
+        if details['cv_skills']:
+            for skill, score in details['cv_skills'].items():
+                print(f"- {skill.capitalize()}")
+        else:
+            print("Aucune compétence spécifique détectée.")
+        
+        print("\nCompétences requises par l'offre :")
+        if details['job_skills']:
+            for skill, score in details['job_skills'].items():
+                print(f"- {skill.capitalize()}")
+        else:
+            print("Aucune compétence spécifique détectée.")
+        print("-----------------------------\n")
+    else:
+        print("L'analyse n'a pas pu être effectuée.")
+
+def print_lbb_results(params, results):
+    """Formate et affiche les résultats de La Bonne Boite."""
+    if results and results.get('entreprises'):
+        output = []
+        total_results = len(results.get('entreprises', []))
+        output.append(f"\n{total_results} ENTREPRISES À FORT POTENTIEL TROUVÉES")
+        output.append(f"Paramètres: {params}")
+        output.append("=" * 60)
+        
+        for i, entreprise in enumerate(results.get('entreprises', [])):
+            output.append(f"\n--- Entreprise n°{i+1} ---")
+            output.append(f"Nom         : {entreprise.get('nom', 'N/A')}")
+            output.append(f"SIRET       : {entreprise.get('siret', 'N/A')}")
+            output.append(f"Adresse     : {entreprise.get('adresse', 'N/A')}")
+            output.append(f"Code Postal : {entreprise.get('code_postal', 'N/A')}")
+            output.append(f"Ville       : {entreprise.get('ville', 'N/A')}")
+            output.append(f"Confiance   : {entreprise.get('taux_confiance', 'N/A')}")
+        
+        output.append("\n" + "=" * 60)
+        print("\n".join(output))
+    else:
+        print("\nAucune entreprise trouvée ou une erreur est survenue avec l'API.")
+
+
+# --- Endpoints Flask (pour une utilisation web future) ---
+
 @app.route('/api/search', methods=['GET'])
 def search_jobs_endpoint():
-    """
-    Recherche des offres d'emploi via l'endpoint web.
-    """
-    if not api:
+    if not offres_client:
         return jsonify({"error": "L'API n'est pas configurée correctement."}), 503
-
     params = request.args.to_dict()
-    if not params:
-        return Response("Erreur: Au moins un paramètre de recherche est requis.", mimetype='text/plain', status=400)
+    results = offres_client.search_jobs(params)
+    return jsonify(results or {"error": "Aucun résultat"})
 
-    # La logique de recherche et d'affichage est maintenant dans la console du serveur
-    # Pour une vraie API, on retournerait du JSON. Ici, on simule l'affichage.
-    perform_and_print_search(params)
-    return Response(f"Recherche effectuée pour {params}. Voir la console du serveur pour les résultats.", mimetype='text/plain')
+@app.route('/api/job_details/<job_id>', methods=['GET'])
+def job_details(job_id):
+    if not offres_client:
+        return jsonify({"error": "L'API n'est pas configurée correctement."}), 503
+    details = offres_client.get_job_details(job_id)
+    return jsonify(details or {"error": "Offre non trouvée"})
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Recherche d'offres d'emploi via l'API France Travail.")
-    parser.add_argument('--motsCles', type=str, help='Mots-clés pour la recherche (ex: "développeur python").')
-    parser.add_argument('--departement', type=str, help='Numéro de département (ex: "75" pour Paris).')
-    parser.add_argument('--commune', type=str, help='Code INSEE de la commune.')
-    parser.add_argument('--codeROME', type=str, help='Code ROME du métier.')
-    parser.add_argument('--range', type=str, default='0-4', help='Plage de résultats (ex: "0-9").')
 
-    # Arguments pour le matching de CV
-    parser.add_argument('--cv', type=str, help='Chemin vers le fichier CV (format .txt).')
-    parser.add_argument('--offre', type=str, help="ID de l'offre d'emploi pour le matching.")
+# --- Logique pour l'exécution en ligne de commande ---
+
+def handle_search(args):
+    """Gère la commande 'search'."""
+    search_params = {k: v for k, v in vars(args).items() if v is not None and k not in ['command', 'func']}
+    if not search_params:
+        print("Erreur: Au moins un critère de recherche est requis pour la commande 'search'.")
+        sys.exit(1)
+    
+    logging.info(f"Recherche d'offres avec les paramètres: {search_params}")
+    results = offres_client.search_jobs(search_params)
+    print_search_results(search_params, results)
+
+def handle_match(args):
+    """Gère la commande 'match'."""
+    print(f"Lancement de l'analyse de matching pour le CV {args.cv} et l'offre {args.id_offre}...")
+    cv_parser = CVParser()
+    try:
+        cv_text = cv_parser.extract_text_from_file(args.cv)
+        if not cv_text:
+            print("Impossible d'extraire le contenu du CV.")
+            sys.exit(1)
+        
+        match_details = offres_client.analyze_cv_match(cv_text, args.id_offre)
+        print_cv_match_results(match_details)
+
+    except FileNotFoundError:
+        print(f"Erreur: Le fichier CV '{args.cv}' n'a pas été trouvé.")
+        sys.exit(1)
+    except Exception as e:
+        logging.error(f"Une erreur est survenue lors de l'analyse du CV: {e}")
+        print(f"Une erreur est survenue : {e}")
+        sys.exit(1)
+
+def handle_lbb(args):
+    """Gère la commande 'lbb'."""
+    lbb_params = {
+        "rome_codes": args.rome,
+        "latitude": args.lat,
+        "longitude": args.lon,
+        "distance": args.dist,
+    }
+    if args.naf:
+        lbb_params["naf_codes"] = args.naf
+    
+    logging.info(f"Recherche La Bonne Boite avec les paramètres: {lbb_params}")
+    results = lbb_client.search_la_bonne_boite(**lbb_params)
+    print_lbb_results(lbb_params, results)
+
+def handle_romeo(args):
+    """Gère la commande 'romeo'."""
+    print(f"Recherche des codes ROME pour l'intitulé : '{args.intitule}'...")
+    try:
+        results = romeo_client.predict_metiers(args.intitule, contexte=args.contexte, nb_results=args.nb)
+        
+        if results and results[0].get('metiersRome'):
+            print("\n--- Résultats de la prédiction ROMEO ---")
+            predictions = results[0]['metiersRome']
+            for i, pred in enumerate(predictions):
+                print(f"\n--- Prédiction n°{i+1} ---")
+                print(f"  Libellé ROME        : {pred.get('libelleRome')}")
+                print(f"  Code ROME           : {pred.get('codeRome')}")
+                print(f"  Libellé Appellation : {pred.get('libelleAppellation')}")
+                print(f"  Code Appellation    : {pred.get('codeAppellation')}")
+                print(f"  Score de confiance  : {pred.get('scorePrediction'):.2f}")
+            print("\n------------------------------------")
+        else:
+            print("Aucune prédiction ROME trouvée pour cet intitulé.")
+            if results:
+                logging.warning("Réponse inattendue de l'API ROMEO: %s", results)
+
+    except Exception as e:
+        logging.error(f"Une erreur est survenue lors de l'appel à l'API ROMEO: {e}")
+        print(f"Une erreur est survenue : {e}")
+
+def main():
+    """Point d'entrée principal pour l'application CLI."""
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    if not offres_client or not lbb_client or not romeo_client:
+        sys.exit(1)
+
+    parser = argparse.ArgumentParser(description="Client pour les API de France Travail.")
+    subparsers = parser.add_subparsers(dest='command', help='Commandes disponibles', required=True)
+
+    # Commande 'search'
+    parser_search = subparsers.add_parser('search', help="Rechercher des offres d'emploi.")
+    parser_search.add_argument('--motsCles', type=str, help='Mots-clés (ex: "développeur python").')
+    parser_search.add_argument('--departement', type=str, help='Numéro de département (ex: "75").')
+    parser_search.add_argument('--commune', type=str, help='Code INSEE de la commune.')
+    parser_search.add_argument('--codeROME', type=str, help='Code ROME du métier.')
+    parser_search.add_argument('--range', type=str, default='0-9', help='Plage de résultats (ex: 0-14).')
+    parser_search.set_defaults(func=handle_search)
+
+    # Commande 'match'
+    parser_match = subparsers.add_parser('match', help="Analyser la compatibilité d'un CV avec une offre.")
+    parser_match.add_argument('cv', type=str, help='Chemin vers le fichier CV (.txt, .pdf, .docx).')
+    parser_match.add_argument('id_offre', type=str, help="L'ID de l'offre d'emploi.")
+    parser_match.set_defaults(func=handle_match)
+
+    # Commande 'lbb'
+    parser_lbb = subparsers.add_parser('lbb', help="Trouver des entreprises à fort potentiel d'embauche.")
+    parser_lbb.add_argument('--rome', required=True, type=str, help='Code(s) ROME (séparés par virgule).')
+    parser_lbb.add_argument('--lat', required=True, type=float, help='Latitude du point de recherche.')
+    parser_lbb.add_argument('--lon', required=True, type=float, help='Longitude du point de recherche.')
+    parser_lbb.add_argument('--dist', type=int, default=10, help='Rayon de recherche en km (défaut: 10).')
+    parser_lbb.add_argument('--naf', type=str, help='Code(s) NAF (séparés par virgule, optionnel).')
+    parser_lbb.set_defaults(func=handle_lbb)
+
+    # Commande 'romeo'
+    parser_romeo = subparsers.add_parser('romeo', help="Obtenir des codes ROME pour un intitulé de poste.")
+    parser_romeo.add_argument('intitule', type=str, help="L'intitulé de poste à analyser (ex: 'boulanger').")
+    parser_romeo.add_argument('--contexte', type=str, help="Contexte optionnel pour affiner la recherche (ex: 'artisanat').")
+    parser_romeo.add_argument('--nb', type=int, default=3, help="Nombre de résultats à afficher (défaut: 3).")
+    parser_romeo.set_defaults(func=handle_romeo)
 
     args = parser.parse_args()
+    args.func(args)
 
-    # Créer un dictionnaire de paramètres uniquement avec les arguments fournis
-    search_params = {k: v for k, v in vars(args).items() if v is not None}
-
-    # Si les arguments pour le matching de CV sont fournis
-    if args.cv and args.offre:
-        print(f"Lancement de l'analyse de matching pour le CV {args.cv} et l'offre {args.offre}...")
-        parser = CVParser()
-        try:
-            print(f"Analyse du CV : {args.cv}")
-            cv_text = parser.extract_text_from_file(args.cv)
-            if not cv_text:
-                print("Impossible d'extraire le contenu du CV.")
-                sys.exit(1)
-
-            print(f"Analyse de la compatibilité avec l'offre : {args.offre}")
-            match_details = api.analyze_cv_match(cv_text, args.offre)
-
-            if match_details:
-                print("\n--- Résultat de l'analyse ---")
-                print(f"Offre d'emploi : {match_details['job_title']}")
-                print(f"Taux de compatibilité : {match_details['matching_rate']:.2f}%")
-                print("\nCompétences détectées dans le CV :")
-                if match_details['cv_skills']:
-                    for skill, score in match_details['cv_skills'].items():
-                        print(f"- {skill.capitalize()}")
-                else:
-                    print("Aucune compétence spécifique détectée.")
-                
-                print("\nCompétences requises par l'offre :")
-                if match_details['job_skills']:
-                    for skill, score in match_details['job_skills'].items():
-                        print(f"- {skill.capitalize()}")
-                else:
-                    print("Aucune compétence spécifique détectée.")
-                print("-----------------------------\n")
-            else:
-                print("L'analyse n'a pas pu être effectuée.")
-
-        except FileNotFoundError:
-            print(f"Erreur : Le fichier CV '{args.cv}' n'a pas été trouvé.")
-        except Exception as e:
-            print(f"Une erreur est survenue lors de l'analyse : {e}")
-
-    # Si des paramètres de recherche ont été passés
-    elif len(search_params) > 1:
-        print("Lancement de la recherche en ligne de commande...")
-        perform_and_print_search(search_params)
-        
-    # Sinon, on lance le serveur web
-    else:
-        if api:
-            print("Aucun argument fourni. Lancement du serveur web...")
-            app.run(debug=True, port=5000)
-        else:
-            print("L'application ne peut pas démarrer car l'API France Travail n'est pas initialisée.")
-            print("Veuillez vérifier votre fichier .env et vos identifiants.")
+if __name__ == '__main__':
+    main()
