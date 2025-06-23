@@ -2,5 +2,6 @@
 from .offres_client import OffresClient
 from .lbb_client import LBBClient
 from .romeo_client import RomeoClient
+from .soft_skills_client import SoftSkillsClient
 
-__all__ = ['OffresClient', 'LBBClient', 'RomeoClient']
+__all__ = ['OffresClient', 'LBBClient', 'RomeoClient', 'SoftSkillsClient']

@@ -26,4 +26,10 @@ Ce document résume l'état d'intégration des différentes API France Travail d
 
 - **Statut** : Intégrée et testée.
 - **Commande CLI** : `python app.py romeo "<intitulé>"`
-- **Notes** : Permet de trouver des codes ROME à partir d'un intitulé de poste.
+
+---
+
+### ✅ API Match via Soft Skills (v1)
+
+- **Statut** : Intégrée et testée
+- **Description** : Récupère les compétences comportementales (soft skills) pour un code ROME et les compare au contenu d'un CV. Le système de matching a été rendu robuste pour gérer les cas où l'API retourne des scores nuls.

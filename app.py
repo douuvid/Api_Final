@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, Response
-from france_travail.api import OffresClient, LBBClient, RomeoClient
+from france_travail.api import OffresClient, LBBClient, RomeoClient, SoftSkillsClient
 from france_travail.cv_parser import CVParser
 from dotenv import load_dotenv
 import os
@@ -14,26 +14,39 @@ app = Flask(__name__)
 
 # Initialiser les clients API
 try:
+    client_id = os.getenv("FRANCE_TRAVAIL_CLIENT_ID")
+    client_secret = os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET")
+
+    if not client_id or not client_secret:
+        raise ValueError("Les variables d'environnement FRANCE_TRAVAIL_CLIENT_ID et FRANCE_TRAVAIL_CLIENT_SECRET doivent être définies.")
+
+    soft_skills_client = SoftSkillsClient(
+        client_id=client_id,
+        client_secret=client_secret,
+        simulation=False
+    )
     offres_client = OffresClient(
-        client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
-        client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET"),
+        soft_skills_client=soft_skills_client,
+        client_id=client_id,
+        client_secret=client_secret,
         simulation=False
     )
     lbb_client = LBBClient(
-        client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
-        client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET"),
+        client_id=client_id,
+        client_secret=client_secret,
         simulation=False
     )
     romeo_client = RomeoClient(
-        client_id=os.getenv("FRANCE_TRAVAIL_CLIENT_ID"),
-        client_secret=os.getenv("FRANCE_TRAVAIL_CLIENT_SECRET"),
+        client_id=client_id,
+        client_secret=client_secret,
         simulation=False
     )
 except ValueError as e:
+    print(f"ERREUR: Impossible d'initialiser les clients API. {e}")
     offres_client = None
     lbb_client = None
     romeo_client = None
-    print(f"ERREUR: Impossible d'initialiser les clients API. {e}")
+    soft_skills_client = None
 
 
 # --- Fonctions d'aide pour l'affichage en console ---
@@ -68,23 +81,29 @@ def print_search_results(params, results):
 def print_cv_match_results(details):
     """Formate et affiche les résultats du matching de CV."""
     if details:
-        print("\n--- Résultat de l'analyse ---")
-        print(f"Offre d'emploi : {details['job_title']}")
+        print("\n--- Résultat de l'analyse de compatibilité ---")
+        print(f"Offre d'emploi : {details['job_title']} (Code ROME: {details.get('rome_code', 'N/A')})")
         print(f"Taux de compatibilité : {details['matching_rate']:.2f}%")
+        
+        print("\nCompétences requises par l'offre (et présence dans le CV) :")
+        if details['job_skills']:
+            # Trie les compétences par score, du plus élevé au plus bas
+            sorted_skills = sorted(details['job_skills'].items(), key=lambda item: item[1], reverse=True)
+            for skill, score in sorted_skills:
+                # Ajoute un marqueur pour indiquer si la compétence a été trouvée dans le CV
+                found_in_cv_marker = "✅" if skill in details['cv_skills'] else "❌"
+                print(f"- {skill.capitalize()} (Score: {score:.2f}) {found_in_cv_marker}")
+        else:
+            print("Aucune compétence requise n'a été trouvée pour ce métier.")
+            
         print("\nCompétences détectées dans le CV :")
         if details['cv_skills']:
-            for skill, score in details['cv_skills'].items():
+            for skill in details['cv_skills']:
                 print(f"- {skill.capitalize()}")
         else:
-            print("Aucune compétence spécifique détectée.")
-        
-        print("\nCompétences requises par l'offre :")
-        if details['job_skills']:
-            for skill, score in details['job_skills'].items():
-                print(f"- {skill.capitalize()}")
-        else:
-            print("Aucune compétence spécifique détectée.")
-        print("-----------------------------\n")
+            print("Aucune des compétences requises n'a été détectée dans le CV.")
+        print("\nLégende: ✅ = Compétence présente dans le CV, ❌ = Compétence absente du CV")
+        print("---------------------------------------------\n")
     else:
         print("L'analyse n'a pas pu être effectuée.")
 
@@ -134,14 +153,22 @@ def job_details(job_id):
 
 def handle_search(args):
     """Gère la commande 'search'."""
-    search_params = {k: v for k, v in vars(args).items() if v is not None and k not in ['command', 'func']}
-    if not search_params:
-        print("Erreur: Au moins un critère de recherche est requis pour la commande 'search'.")
-        sys.exit(1)
-    
-    logging.info(f"Recherche d'offres avec les paramètres: {search_params}")
-    results = offres_client.search_jobs(search_params)
-    print_search_results(search_params, results)
+    params = {}
+    if args.keyword:
+        params['motsCles'] = args.keyword
+    if args.departement:
+        params['departement'] = args.departement
+    if args.commune:
+        params['commune'] = args.commune
+    if args.codeROME:
+        params['codeROME'] = args.codeROME
+
+    # Utiliser --limit pour définir la plage de résultats, qui est 'range' pour l'API
+    params['range'] = f"0-{args.limit - 1}"
+
+    logging.info(f"Recherche d'offres avec les paramètres: {params}")
+    results = offres_client.search_jobs(params)
+    print_search_results(params, results)
 
 def handle_match(args):
     """Gère la commande 'match'."""
@@ -209,7 +236,7 @@ def main():
     """Point d'entrée principal pour l'application CLI."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    if not offres_client or not lbb_client or not romeo_client:
+    if not offres_client or not lbb_client or not romeo_client or not soft_skills_client:
         sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Client pour les API de France Travail.")
@@ -217,7 +244,8 @@ def main():
 
     # Commande 'search'
     parser_search = subparsers.add_parser('search', help="Rechercher des offres d'emploi.")
-    parser_search.add_argument('--motsCles', type=str, help='Mots-clés (ex: "développeur python").')
+    parser_search.add_argument('keyword', type=str, help='Mot-clé pour la recherche (ex: "développeur python").')
+    parser_search.add_argument('--limit', type=int, default=5, help='Nombre de résultats à retourner.')
     parser_search.add_argument('--departement', type=str, help='Numéro de département (ex: "75").')
     parser_search.add_argument('--commune', type=str, help='Code INSEE de la commune.')
     parser_search.add_argument('--codeROME', type=str, help='Code ROME du métier.')
