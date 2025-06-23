@@ -3,3 +3,5 @@ python-dotenv
 Flask
 PyPDF2
 python-docx
+fastapi
+uvicorn

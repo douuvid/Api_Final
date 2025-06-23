@@ -1,12 +1,13 @@
 # Projet d'Intégration des API France Travail
 
-Ce projet fournit un client Python et un outil en ligne de commande pour interagir avec plusieurs API de France Travail. Il permet non seulement de rechercher des offres d'emploi, mais aussi d'analyser la compatibilité d'un CV avec une offre et d'identifier des entreprises à fort potentiel de recrutement.
+Ce projet fournit un client Python, un outil en ligne de commande et une API web (basée sur FastAPI) pour interagir avec plusieurs API de France Travail. Il permet de rechercher des offres d'emploi, d'analyser la compatibilité d'un CV avec une offre, et d'identifier des entreprises à fort potentiel de recrutement.
 
-## Fonctionnalités
+## Architecture
 
-*   **Recherche d'offres d'emploi** : Filtrez les offres par mots-clés, département, commune ou code ROME.
-*   **Analyse de CV** : Calculez un score de compatibilité entre votre CV (formats PDF, DOCX, TXT) et une offre d'emploi spécifique.
-*   **La Bonne Boite (LBB)** : Identifiez les entreprises les plus susceptibles de recruter prochainement, même sans offre publiée, pour des candidatures spontanées ciblées.
+Le projet est maintenant divisé en trois parties principales :
+1.  **Clients API (`france_travail/`)**: La logique de bas niveau pour communiquer avec les API de France Travail.
+2.  **Interface en Ligne de Commande (`cli.py`)**: Un outil pour utiliser les fonctionnalités directement depuis le terminal.
+3.  **Serveur API (`api_server/`)**: Une API web moderne (FastAPI) qui expose les fonctionnalités via des endpoints HTTP.
 
 ---
 
@@ -33,99 +34,62 @@ Ce projet fournit un client Python et un outil en ligne de commande pour interag
 
 ---
 
-## 3. Utilisation en Ligne de Commande
+## 3. Utilisation
 
-L'application utilise des commandes distinctes pour chaque fonctionnalité.
+Vous pouvez interagir avec le projet de deux manières : via l'interface en ligne de commande ou via le serveur API.
 
-### A. `search` : Rechercher des offres d'emploi
+### A. Interface en Ligne de Commande (`cli.py`)
 
-Utilisez la commande `search` pour trouver des offres d'emploi.
+C'est l'outil idéal pour des tests rapides ou des scripts.
 
-**Syntaxe :**
+**Syntaxe générale :**
 ```bash
-python app.py search [options]
+python3 cli.py <commande> [arguments]
 ```
 
 **Exemples :**
 
--   Chercher un poste de "développeur python" dans le Rhône (69) :
+-   **Rechercher** un poste de "développeur python" :
     ```bash
-    python app.py search --motsCles "développeur python" --departement "69"
+    python3 cli.py search "développeur python"
     ```
--   Chercher des offres pour le code ROME "M1805" (Informatique et télécoms) :
+-   **Analyser un CV** (`mon_cv.txt`) avec une offre (`194FPYN`) :
     ```bash
-    python app.py search --codeROME "M1805"
+    python3 cli.py match data/mon_cv.txt 194FPYN
     ```
-
-### B. `match` : Analyser un CV
-
-Utilisez la commande `match` pour évaluer la compatibilité de votre CV avec une offre d'emploi.
-
-**Syntaxe :**
-```bash
-python app.py match <chemin_vers_cv> <id_offre>
-```
-
-**Exemple :**
-```bash
-python app.py match ./mon_cv.pdf 1234567X
-```
-
-### C. `lbb` : Trouver "La Bonne Boite"
-
-Utilisez la commande `lbb` pour identifier les entreprises à fort potentiel d'embauche pour des candidatures spontanées.
-
-**À quoi ça sert ?**
-L'API "La Bonne Boite" ne liste pas des offres publiées, mais **prédit les entreprises qui vont probablement recruter bientôt**. C'est un outil puissant pour envoyer des candidatures spontanées ciblées.
-
-**Syntaxe :**
-```bash
-python app.py lbb --rome <code_rome> --lat <latitude> --lon <longitude> [options]
-```
-
-**Exemples :**
-
--   Trouver les entreprises susceptibles de recruter des développeurs (ROME M1805) près de Paris :
+-   **Trouver "La Bonne Boite"** pour des développeurs (ROME M1805) près de Paris :
     ```bash
-    python app.py lbb --rome "M1805" --lat 48.8566 --lon 2.3522
-    ```
--   Recherche plus large (rayon de 25 km) :
-    ```bash
-    python app.py lbb --rome "M1805" --lat 48.8566 --lon 2.3522 --dist 25
+    python3 cli.py lbb --rome "M1805" --lat 48.8566 --lon 2.3522
     ```
 
----
+### B. Serveur API (FastAPI)
 
-## 4. Utilisation en tant que Serveur Web (Optionnel)
+C'est la méthode recommandée pour intégrer ces fonctionnalités dans une application web ou mobile.
 
-Le projet inclut également un serveur Flask simple pour exposer les fonctionnalités via une API web. Pour le lancer, exécutez le script sans arguments (note : cette fonctionnalité est actuellement désactivée par défaut au profit de l'interface en ligne de commande) :
+**1. Lancement du serveur :**
 
+Exécutez la commande suivante depuis la racine du projet :
 ```bash
-# Pour réactiver le serveur, une modification du code dans app.py est nécessaire.
+uvicorn api_server.main:app --reload
 ```
+Le serveur sera accessible à l'adresse `http://127.0.0.1:8000`.
 
-Les endpoints disponibles (si réactivés) sont :
--   `/api/search?params...`
--   `/api/job_details/<job_id>`
+**2. Documentation Interactive :**
 
--   Pour chercher un poste de "vendeur" dans les Bouches-du-Rhône :
-    ```bash
-    python3 app.py --motsCles "vendeur" --departement 13
+Une fois le serveur lancé, ouvrez votre navigateur à l'adresse suivante pour accéder à une documentation complète et interactive de l'API :
+[**http://127.0.0.1:8000/docs**](http://127.0.0.1:8000/docs)
+
+Depuis cette page, vous pouvez tester tous les endpoints directement.
+
+**3. Endpoints disponibles :**
+
+*   `GET /search?keywords=...`: Recherche des offres d'emploi.
+    *   Exemple : `http://127.0.0.1:8000/search?keywords=comptable`
+*   `GET /details/{job_id}`: Récupère les détails d'une offre spécifique.
+    *   Exemple : `http://127.0.0.1:8000/details/194FPYN`
+*   `POST /match/{job_id}`: Calcule le score de compatibilité entre un CV et une offre. Le corps de la requête doit contenir le texte du CV au format JSON :
+    ```json
+    {
+      "cv_text": "Le texte de votre CV ici..."
+    }
     ```
-
-**Arguments disponibles :**
--   `--motsCles`: Le métier ou les compétences (obligatoire).
--   `--departement`: Le numéro du département.
--   `--commune`: Le code INSEE de la commune.
--   `--range`: La plage de résultats (ex: `0-10`). Par défaut, les 5 premières offres sont affichées.
-
-### B. Lancement du Serveur Web
-
-Si vous n'utilisez aucun argument, le script lancera un serveur web local.
-
-**Commande :**
-```bash
-python3 app.py
-```
-
-Le serveur sera alors accessible à l'adresse `http://127.0.0.1:5000`.
