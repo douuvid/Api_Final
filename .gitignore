@@ -71,3 +71,6 @@ Thumbs.db
 /france_travail/alternative_client.py
 
 /france_travail/utils.py
+
+# Dossier de logs France Travail
+dossier_pole_emploi/
