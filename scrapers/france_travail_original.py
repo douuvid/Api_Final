@@ -18,15 +18,14 @@ import csv
 from datetime import datetime
 
 # ===== CONFIGURATION =====
-EMAIL = "silasi"
-PASSWORD = "ApocalypsE972."
-MOTS_CLES = "serveur "
-LOCALISATION = "Paris"
+# Le chemin du fichier de log reste une constante globale.
 LOG_FILE = "dossier_pole_emploi/candidatures_france_travail.csv"
 
 # ===== INITIALISATION =====
-driver = webdriver.Chrome()
-driver.maximize_window()
+# Le driver est maintenant initialisé dans la fonction lancer_scraping
+# pour garantir qu'il est propre à chaque exécution.
+# On le déclare en global pour que les fonctions helper puissent l'utiliser.
+driver = None
 
 # ===== FONCTIONS UTILITAIRES =====
 
@@ -601,98 +600,115 @@ def passer_offre_suivante():
         print(f"❌ Erreur lors du clic sur le bouton 'Suivant': {e}")
         return False
 
-def cliquer_et_postuler():
-    """Rechercher des offres et postuler."""
-    print(f"🚀 Lancement du processus de candidature pour '{MOTS_CLES}' à '{LOCALISATION}'...")
+def lancer_scraping(identifiant, mot_de_passe, mots_cles, localisation, headless=True):
+    """
+    Lance le processus de scraping en streamant les logs en temps réel.
+    """
+    global driver
+    import json
+
+    yield "🚀 Initialisation du scraper..."
     
-    # Connexion au site
-    if not connexion_france_travail(EMAIL, PASSWORD):
-        print("❌ Échec de la connexion, impossible de rechercher des offres.")
-        return
-    
+    options = webdriver.ChromeOptions()
+    if headless:
+        options.add_argument("--headless")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(options=options)
+    driver.maximize_window()
+
     try:
-        # Naviguer vers la page de recherche d'offres
+        yield f"🚀 Lancement du processus pour '{mots_cles}' à '{localisation}'..."
+        
+        if not connexion_france_travail(identifiant, mot_de_passe):
+            yield "❌ Échec de la connexion, arrêt du processus."
+            return
+
+        yield "✅ Connexion réussie. Navigation vers la page de recherche..."
         driver.get("https://candidat.francetravail.fr/rechercheoffre/landing")
         attendre_delai_aleatoire(3, 5)
         
-        # Saisir les critères de recherche et lancer la recherche
-        rechercher_offres(MOTS_CLES, LOCALISATION)
+        yield "🔍 Recherche des offres en cours..."
+        rechercher_offres(mots_cles, localisation)
         
-        # Récupérer toutes les offres sur la page
         offres_elements = driver.find_elements(By.CSS_SELECTOR, "li[data-id-offre]")
         
         if not offres_elements:
-            print("ℹ️  Aucune offre trouvée.")
+            yield "ℹ️  Aucune offre trouvée."
             return
         
-        print(f"📊 {len(offres_elements)} offres trouvées sur la page.")
+        nombre_offres = len(offres_elements)
+        yield f"TOTAL_OFFERS:{nombre_offres}"
+        yield f"📊 {nombre_offres} offres trouvées. Début du traitement..."
         
-        # Cliquer sur la première offre pour commencer
-        try:
-            premiere_offre = offres_elements[0]
-            offre_id = premiere_offre.get_attribute("data-id-offre")
-            print(f"\n📄 Traitement de la première offre (ID: {offre_id})...")
-            
-            lien_offre = premiere_offre.find_element(By.ID, "pagelink")
-            print("➡️ Clic sur la première offre...")
-            lien_offre.click()
-            
-            # Attendre que la modal des détails s'ouvre
-            attendre_delai_aleatoire(3, 5)
-            
-            # Initialiser les compteurs
-            offres_traitees = 0
-            candidatures_reussies = 0
-            deja_postule_count = 0
-            redirections_externes_count = 0
-            offres_avec_redirection = 0
-            offres_directes = 0
-
-            # Continuer tant que le bouton "Suivant" est disponible
-            while True:
-                # Traiter l'offre actuellement affichée
-                resultat = traiter_offre()
-                
-                # Mettre à jour les compteurs
-                offres_traitees += 1
-                if resultat == "succes_direct":
-                    candidatures_reussies += 1
-                    offres_directes += 1
-                elif resultat == "echec_direct":
-                    offres_directes += 1
-                elif resultat == "deja_postule":
-                    deja_postule_count += 1
-                elif resultat == "redirection_externe":
-                    redirections_externes_count += 1
-                
-                # Limiter le test à 10 offres
-                if offres_traitees >= 10:
-                    print("\n🛑 Limite de 1 offres atteinte pour le test.")
-                    break
-
-                # Passer à l'offre suivante
-                if not passer_offre_suivante():
-                    break
-            
-            print(f"\n\n🎉 ===== RÉSUMÉ DU TRAITEMENT ===== 🎉")
-            print(f"📊 Offres traitées au total : {offres_traitees}")
-            print(f"✅ Candidatures envoyées avec succès : {candidatures_reussies}")
-            print(f"📄 Offres avec candidature directe (réussies ou non) : {offres_directes}")
-            print(f"↪️  Offres avec redirection externe : {redirections_externes_count}")
-            print(f"👍 Offres déjà postulées (ignorées) : {deja_postule_count}")
-            
-        except Exception as e:
-            print(f"❌ Erreur lors du traitement des offres: {e}")
+        premiere_offre = offres_elements[0]
+        premiere_offre.find_element(By.ID, "pagelink").click()
+        attendre_delai_aleatoire(3, 5)
         
+        offres_traitees = 0
+        candidatures_reussies = 0
+        deja_postule_count = 0
+        redirections_externes_count = 0
+        offres_directes_count = 0
+
+        while True:
+            resultat = traiter_offre()
+            
+            offres_traitees += 1
+            yield f"PROGRESS:{offres_traitees}"
+            if resultat == "succes_direct":
+                candidatures_reussies += 1
+                offres_directes_count += 1
+            elif resultat == "echec_direct":
+                offres_directes_count += 1
+            elif resultat == "deja_postule":
+                deja_postule_count += 1
+            elif resultat == "redirection_externe":
+                redirections_externes_count += 1
+            
+            if offres_traitees >= 10:
+                yield "\n🛑 Limite de 10 offres atteinte pour le test."
+                break
+
+            if not passer_offre_suivante():
+                break
+        
+        resume = {
+            "offres_traitees": offres_traitees,
+            "candidatures_reussies": candidatures_reussies,
+            "offres_directes": offres_directes_count,
+            "redirections_externes": redirections_externes_count,
+            "deja_postule": deja_postule_count
+        }
+        yield f"FIN:{json.dumps(resume)}"
+
     except Exception as e:
-        print(f"❌ Erreur générale inattendue: {e}")
+        yield f"❌ Erreur générale inattendue: {e}"
+    finally:
+        yield "🛑 Fermeture du navigateur..."
+        if driver:
+            time.sleep(2)
+            driver.quit()
 
-# ===== EXÉCUTION =====
+# ===== EXÉCUTION (pour test direct du script) =====
 
 if __name__ == "__main__":
-    try:
-        cliquer_et_postuler()
-    finally:
-        print("🛑 Fermeture du navigateur...")
-        time.sleep(2)
-        driver.quit()
+    TEST_EMAIL = "silasi"
+    TEST_PASSWORD = "ApocalypsE972."
+    TEST_MOTS_CLES = "serveur"
+    TEST_LOCALISATION = "Paris"
+    
+    print("--- Lancement du scraper en mode test ---")
+    scraper_generator = lancer_scraping(
+        identifiant=TEST_EMAIL,
+        mot_de_passe=TEST_PASSWORD,
+        mots_cles=TEST_MOTS_CLES,
+        localisation=TEST_LOCALISATION,
+        headless=False
+    )
+    
+    for message in scraper_generator:
+        # En mode test, on ne traite pas le préfixe 'FIN:'
+        print(message)

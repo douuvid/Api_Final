@@ -1,5 +1,6 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
+from scrapers.france_travail_original import lancer_scraping
 from france_travail.api import OffresClient, LBBClient, RomeoClient, SoftSkillsClient, ContexteTravailClient
 from france_travail.cv_parser import CVParser
 from dotenv import load_dotenv
@@ -98,7 +99,29 @@ def api_match_cv():
         logging.error(f"Erreur lors de l'analyse de compatibilité via API: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/lancer-scraping', methods=['POST'])
+def lancer_scraping_endpoint():
+    data = request.get_json()
+    if not data:
+        return jsonify({"erreur": "Aucune donnée fournie"}), 400
+
+    identifiant = data.get('identifiant')
+    mot_de_passe = data.get('mot_de_passe')
+    mots_cles = data.get('mots_cles')
+    localisation = data.get('localisation')
+
+    if not all([identifiant, mot_de_passe, mots_cles, localisation]):
+        return jsonify({"erreur": "Paramètres manquants"}), 400
+
+    def generate_logs():
+        """Appelle le générateur du scraper et formate sa sortie pour SSE."""
+        scraper_generator = lancer_scraping(identifiant, mot_de_passe, mots_cles, localisation, headless=True)
+        for log_message in scraper_generator:
+            # Formatage pour Server-Sent Events (SSE)
+            yield f"data: {log_message}\n\n"
+    
+    # Retourne une réponse en streaming
+    return Response(generate_logs(), mimetype='text/event-stream')
+
 if __name__ == '__main__':
-    # Pour lancer le serveur web : python app.py
-    # Pour utiliser l'outil en ligne de commande : python cli.py
     app.run(debug=True, port=5000)
