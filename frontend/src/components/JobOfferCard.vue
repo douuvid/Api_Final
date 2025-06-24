@@ -1,5 +1,6 @@
 <template>
-  <div class="job-card">
+  <router-link :to="{ name: 'offer-detail', params: { id: offer.id } }" class="job-card-link">
+    <div class="job-card">
     <h3>{{ offer.intitule }}</h3>
     <p class="company" v-if="offer.entreprise && offer.entreprise.nom">
       {{ offer.entreprise.nom }}
@@ -13,8 +14,8 @@
     <div class="description" v-if="offer.description">
       <p>{{ offer.description.substring(0, 150) }}...</p>
     </div>
-    <a :href="offer.origineOffre.urlOrigine" target="_blank" class="details-button">Voir l'offre</a>
-  </div>
+    </div>
+  </router-link>
 </template>
 
 <script>
@@ -30,6 +31,11 @@ export default {
 </script>
 
 <style scoped>
+.job-card-link {
+  text-decoration: none;
+  color: inherit;
+}
+
 .job-card {
   border: 1px solid #e0e0e0;
   border-radius: 8px;
