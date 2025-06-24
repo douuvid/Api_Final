@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 from france_travail.api import OffresClient, LBBClient, RomeoClient, SoftSkillsClient, ContexteTravailClient
 from france_travail.cv_parser import CVParser
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ import logging
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)  # Activer CORS pour toutes les routes
 
 # Initialiser le parser de CV (utilisé par l'API et le CLI)
 cv_parser = CVParser()

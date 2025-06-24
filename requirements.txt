@@ -1,6 +1,7 @@
 requests
 python-dotenv
 Flask
+Flask-Cors
 PyPDF2
 python-docx
 fastapi
