@@ -13,6 +13,9 @@ from app import (
     cv_parser
 )
 
+# Importer le module de base de données
+from database import UserDatabase, DatabaseConfig
+
 # --- Fonctions d'aide pour l'affichage en console ---
 
 def print_search_results(params, results):
@@ -211,6 +214,25 @@ def handle_contexte(args):
             logging.error(f"Erreur lors de la récupération de la version: {e}")
             print(f"Une erreur est survenue: {e}")
 
+def handle_db(args):
+    """Gère les commandes liées à la base de données."""
+    if args.subcommand == 'init':
+        print("Initialisation de la base de données...")
+        db = UserDatabase(
+            host=DatabaseConfig.HOST,
+            database=DatabaseConfig.DATABASE,
+            user=DatabaseConfig.USER,
+            password=DatabaseConfig.PASSWORD,
+            port=DatabaseConfig.PORT
+        )
+        if db.connect():
+            print("Création des tables...")
+            db.create_tables()
+            db.disconnect()
+            print("\n✅ Base de données initialisée avec succès.")
+        else:
+            print("\n❌ Échec de l'initialisation de la base de données. Vérifiez votre configuration .env et que PostgreSQL est en cours d'exécution.")
+
 def main():
     """Point d'entrée principal pour l'application CLI."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -267,6 +289,14 @@ def main():
     # Sous-commande 'contexte version'
     parser_contexte_version = contexte_subparsers.add_parser('version', help='Lire la version actuelle du ROME.')
     parser_contexte_version.set_defaults(func=handle_contexte)
+
+    # Commande 'db'
+    parser_db = subparsers.add_parser('db', help='Gérer la base de données.')
+    db_subparsers = parser_db.add_subparsers(dest='subcommand', help='Sous-commandes pour la base de données', required=True)
+
+    # Sous-commande 'db init'
+    parser_db_init = db_subparsers.add_parser('init', help='Initialiser la base de données et créer les tables.')
+    parser_db_init.set_defaults(func=handle_db)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):

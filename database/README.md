@@ -1,92 +1,84 @@
-# Gestion de la base de données
+# Module de Base de Données (`user_database`)
 
-Ce dossier contient le code pour la gestion de la base de données PostgreSQL de l'application de recherche d'emploi.
+Ce dossier contient tout le code nécessaire à l'interaction avec la base de données PostgreSQL de l'application.
 
 ## Structure
 
-- `__init__.py` - Fichier d'initialisation du package
-- `config.py` - Configuration de la base de données
-- `user_database.py` - Implémentation de la classe UserDatabase
-- `README.md` - Ce fichier de documentation
+- `user_database.py` : Le fichier principal contenant la classe `UserDatabase`. Cette classe encapsule toute la logique de connexion, de création de schéma et de manipulation des données (CRUD).
+- `README.md` : Ce fichier de documentation.
 
 ## Configuration
 
-1. Copiez le fichier `.env.example` vers `.env` :
-   ```bash
-   cp .env.example .env
-   ```
+La configuration de la connexion à la base de données est gérée par des variables d'environnement. Référez-vous au `README.md` principal du projet pour les instructions de configuration du fichier `.env`.
 
-2. Modifiez les variables d'environnement dans `.env` selon votre configuration PostgreSQL.
-
-3. Installez les dépendances :
-   ```bash
-   pip install -r requirements.txt
-   ```
+Les paramètres de connexion attendus sont :
+- `DB_HOST`
+- `DB_PORT` (par défaut `5433`)
+- `DB_NAME`
+- `DB_USER` (par défaut `davidravin` sur cet environnement)
+- `DB_PASSWORD`
 
 ## Utilisation
 
-```python
-from database import UserDatabase, DatabaseConfig
+Voici un exemple de base pour utiliser la classe `UserDatabase`.
 
-# Initialisation de la base de données
+```python
+# main.py ou un script de test
+
+from database.user_database import UserDatabase
+
+# 1. Initialiser la classe avec les paramètres de connexion
 db = UserDatabase(
-    host=DatabaseConfig.HOST,
-    database=DatabaseConfig.DATABASE,
-    user=DatabaseConfig.USER,
-    password=DatabaseConfig.PASSWORD,
-    port=DatabaseConfig.PORT
+    host="localhost",
+    port=5433,
+    database="job_search_app",
+    user="davidravin",
+    password=""
 )
 
-# Connexion à la base de données
+# 2. Établir la connexion
 if db.connect():
-    # Création des tables
+    print("Connexion réussie !")
+
+    # 3. Créer les tables (si elles n'existent pas)
     db.create_tables()
-    
-    # Exemple: Création d'un utilisateur
-    user_data = {
-        'email': 'test@example.com',
-        'password': 'motdepasse',
-        'first_name': 'Jean',
-        'last_name': 'Dupont'
-    }
-    
+    print("Tables créées ou déjà existantes.")
+
+    # 4. Utiliser les méthodes de la classe
     try:
-        user_id, verification_token = db.create_user(user_data)
-        print(f"Utilisateur créé avec l'ID: {user_id}")
+        user_data = {
+            'email': 'test@example.com',
+            'password': 'a_very_secure_password',
+            'first_name': 'Jean',
+            'last_name': 'Dupont'
+        }
+        user_id, token = db.create_user(user_data)
+        print(f"Utilisateur créé avec l'ID : {user_id}")
     except ValueError as e:
-        print(f"Erreur: {e}")
-    
-    # Fermeture de la connexion
+        print(f"Erreur lors de la création de l'utilisateur : {e}")
+
+    # 5. Fermer la connexion
     db.disconnect()
 ```
 
 ## Schéma de la base de données
 
-### Tables principales
+Le script crée automatiquement les tables suivantes :
 
-1. **users** - Informations de base des utilisateurs
-2. **user_profiles** - Profils professionnels des utilisateurs
-3. **skills** - Compétences disponibles
-4. **user_skills** - Compétences des utilisateurs avec niveau
-5. **user_experiences** - Expériences professionnelles
-6. **user_educations** - Formations
-7. **saved_searches** - Recherches sauvegardées
-8. **favorite_jobs** - Offres d'emploi favorites
-9. **job_applications** - Candidatures
-10. **user_preferences** - Préférences utilisateur
-11. **user_sessions** - Sessions utilisateur
+- **users** : Informations de base des utilisateurs.
+- **user_profiles** : Profils professionnels détaillés.
+- **skills** : Liste centralisée des compétences.
+- **user_skills** : Lie les utilisateurs aux compétences.
+- **user_experiences** : Historique professionnel.
+- **user_educations** : Parcours académique.
+- **saved_searches** : Recherches d'emploi sauvegardées.
+- **favorite_jobs** : Offres d'emploi mises en favori.
+- **job_applications** : Suivi des candidatures.
+- **user_preferences** : Paramètres de l'application pour un utilisateur.
+- **user_sessions** : Gestion des sessions de connexion.
 
 ## Sécurité
 
-- Les mots de passe sont hachés avec PBKDF2-HMAC-SHA256 et un sel unique
-- Verrouillage des comptes après 5 tentatives de connexion échouées
-- Validation des emails
-- Gestion des jetons de vérification et de réinitialisation de mot de passe
-
-## Tests
-
-Les tests unitaires se trouvent dans le dossier `tests/`.
-
-## Licence
-
-[À spécifier]
+- **Hachage de mot de passe** : Utilise PBKDF2-HMAC-SHA256 avec un sel unique pour chaque utilisateur.
+- **Verrouillage de compte** : Le compte est temporairement verrouillé après 5 tentatives de connexion infructueuses.
+- **Validation** : Le format des adresses e-mail est validé avant la création du compte.

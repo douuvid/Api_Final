@@ -5,7 +5,8 @@ Flask-Cors
 PyPDF2
 python-docx
 fastapi
-uvicorn==0.23.2
+uvicorn[standard]==0.23.2
+psycopg2-binary==2.9.9
 selenium==4.15.2
 webdriver-manager
 undetected-chromedriver
