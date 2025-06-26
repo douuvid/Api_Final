@@ -16,6 +16,7 @@ import random
 import os
 import csv
 from datetime import datetime
+from dotenv import load_dotenv
 
 # ===== CONFIGURATION =====
 # Le chemin du fichier de log reste une constante globale.
@@ -695,10 +696,15 @@ def lancer_scraping(identifiant, mot_de_passe, mots_cles, localisation, headless
 # ===== EXÉCUTION (pour test direct du script) =====
 
 if __name__ == "__main__":
-    TEST_EMAIL = "silasi"
-    TEST_PASSWORD = "ApocalypsE972."
+    load_dotenv()
+    TEST_EMAIL = os.getenv("FRANCE_TRAVAIL_TEST_EMAIL")
+    TEST_PASSWORD = os.getenv("FRANCE_TRAVAIL_TEST_PASSWORD")
     TEST_MOTS_CLES = "serveur"
     TEST_LOCALISATION = "Paris"
+
+    if not TEST_EMAIL or not TEST_PASSWORD:
+        print("ERREUR: Veuillez définir FRANCE_TRAVAIL_TEST_EMAIL et FRANCE_TRAVAIL_TEST_PASSWORD dans votre fichier .env")
+        exit()
     
     print("--- Lancement du scraper en mode test ---")
     scraper_generator = lancer_scraping(
