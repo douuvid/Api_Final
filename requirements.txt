@@ -10,3 +10,6 @@ pg8000
 selenium==4.15.2
 webdriver-manager
 undetected-chromedriver
+pydantic[email]
+python-jose[pycryptodome]
+passlib[bcrypt]
