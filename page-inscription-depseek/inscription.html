@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>e-Ra | Connexion</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        .main-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+        .left-panel {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+        }
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .right-panel {
+            flex-basis: 45%;
+            max-width: 650px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            background-color: #f8f9fa; /* Light grey background */
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="left-panel">
+            <div id="canvas-container"></div>
+        </div>
+        <div class="right-panel">
+            <div class="w-full max-w-sm mx-auto">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl font-bold text-gray-900">Bienvenue sur e-Ra</h2>
+                    <p class="mt-2 text-sm text-gray-600">Connectez-vous à votre interface cognitive</p>
+                </div>
+                <form id="login-form" class="space-y-5">
+                    <div>
+                        <label for="email" class="text-sm font-medium text-gray-700">Adresse e-mail</label>
+                        <input type="email" id="email" class="w-full px-4 py-2.5 mt-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" placeholder="votre@email.com" required>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <label for="password" class="text-sm font-medium text-gray-700">Mot de passe</label>
+                            <a href="#" class="text-sm text-indigo-600 hover:text-indigo-500 font-medium">Mot de passe oublié ?</a>
+                        </div>
+                        <input type="password" id="password" class="w-full px-4 py-2.5 mt-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" placeholder="••••••••" required>
+                    </div>
+                    <div class="flex items-center">
+                        <input id="remember-me" name="remember-me" type="checkbox" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <label for="remember-me" class="ml-2 block text-sm text-gray-700">Se souvenir de moi</label>
+                    </div>
+                    <div class="pt-2">
+                        <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-transform transform hover:scale-105">
+                            SE CONNECTER
+                        </button>
+                    </div>
+                </form>
+                <p class="mt-8 text-sm text-center text-gray-600">
+                    Pas encore inscrit ?
+                    <a href="#" class="font-medium text-indigo-600 hover:text-indigo-500">Créer un compte</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Three.js 3D Animation ---
+        const canvasContainer = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        
+        renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        canvasContainer.appendChild(renderer.domElement);
+
+        // Starfield
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsCount = 5000;
+        const posArray = new Float32Array(starsCount * 3);
+        for (let i = 0; i < starsCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * (Math.random() * 500) + 100;
+        }
+        starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const starsMaterial = new THREE.PointsMaterial({
+            size: 0.5,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.8
+        });
+        const starField = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(starField);
+
+        // Wireframe Sphere
+        const sphereGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+        const sphereMaterial = new THREE.MeshBasicMaterial({
+            color: 0x60a5fa, // A light blue color
+            wireframe: true
+        });
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        scene.add(sphere);
+        
+        camera.position.z = 4;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            starField.rotation.y += 0.0001;
+            sphere.rotation.x += 0.0005;
+            sphere.rotation.y += 0.0005;
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const width = canvasContainer.clientWidth;
+            const height = canvasContainer.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+    </script>
+</body>
+</html>
