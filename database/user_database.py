@@ -115,13 +115,25 @@ class UserDatabase:
         CREATE TABLE IF NOT EXISTS job_applications (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
-            offer_url VARCHAR(2048) NOT NULL, 
+            offer_url VARCHAR(2048) NOT NULL,
+            title VARCHAR(255),
+            company VARCHAR(255),
+            location VARCHAR(255),
+            description TEXT,
+            status VARCHAR(100),
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, offer_url)
         );
         """
         self._execute_query(create_applications_table)
-        logger.info("✅ Table 'job_applications' prête.")
+
+        # Migrations pour la table 'job_applications'
+        self._execute_query("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS title VARCHAR(255);")
+        self._execute_query("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS company VARCHAR(255);")
+        self._execute_query("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS location VARCHAR(255);")
+        self._execute_query("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS description TEXT;")
+        self._execute_query("ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS status VARCHAR(100);")
+        logger.info("✅ Table 'job_applications' prête et à jour.")
 
     def get_user_by_email(self, email: str):
         """Récupère un utilisateur par son email."""
@@ -167,24 +179,79 @@ class UserDatabase:
         logger.info(f"Mise à jour des documents pour l'utilisateur ID {user_id}...")
         return self._execute_query(query, tuple(params), fetch='one')
 
-    def record_application(self, user_id: int, offer_url: str):
+    def record_application(self, user_id: int, offer_details: dict):
         """Enregistre une candidature pour un utilisateur."""
         query = """
-        INSERT INTO job_applications (user_id, offer_url) VALUES (%s, %s) ON CONFLICT (user_id, offer_url) DO NOTHING;
+        INSERT INTO job_applications (user_id, offer_url, title, company, location, description, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (user_id, offer_url) DO UPDATE SET
+            title = EXCLUDED.title,
+            company = EXCLUDED.company,
+            location = EXCLUDED.location,
+            description = EXCLUDED.description,
+            status = EXCLUDED.status,
+            applied_at = CURRENT_TIMESTAMP;
         """
+        params = (
+            user_id,
+            offer_details.get('Lien'),
+            offer_details.get('Titre'),
+            offer_details.get('Entreprise'),
+            offer_details.get('Lieu'),
+            offer_details.get('Description'),
+            offer_details.get('Statut')
+        )
         try:
-            self._execute_query(query, (user_id, offer_url))
-            logger.info(f"Candidature enregistrée pour l'utilisateur {user_id} à l'offre {offer_url}")
+            self._execute_query(query, params)
+            logger.info(f"Candidature enregistrée/mise à jour pour l'utilisateur {user_id} à l'offre {offer_details.get('Lien')}")
             return True
         except Exception as e:
             logger.error(f"Erreur lors de l'enregistrement de la candidature : {e}")
             return False
 
+    def get_user_applications(self, user_id: int):
+        """Récupère toutes les candidatures pour un utilisateur donné."""
+        query = "SELECT title, company, location, description, offer_url, status, applied_at FROM job_applications WHERE user_id = %s ORDER BY applied_at DESC;"
+        return self._execute_query(query, (user_id,), fetch='all')
+
     def check_if_applied(self, user_id: int, offer_url: str) -> bool:
         """Vérifie si un utilisateur a déjà postulé à une offre."""
         query = "SELECT EXISTS(SELECT 1 FROM job_applications WHERE user_id = %s AND offer_url = %s);"
         result = self._execute_query(query, (user_id, offer_url), fetch='one')
-        return result is not None
+        return result['exists'] if result else False
+
+    def reset_user_applications(self, user_id: int):
+        """Supprime toutes les candidatures pour un user_id donné."""
+        logger.warning(f"⚠️  Réinitialisation des candidatures pour l'utilisateur ID {user_id}.")
+        try:
+            query = "DELETE FROM job_applications WHERE user_id = %s;"
+            self._execute_query(query, (user_id,))
+            self.conn.commit()
+            logger.info(f"✅ Toutes les candidatures pour l'utilisateur ID {user_id} ont été supprimées.")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Erreur lors de la réinitialisation des candidatures pour l'utilisateur {user_id}: {e}")
+            return False
+
+    def update_user_prefs(self, user_id, prefs_data):
+        """Met à jour les préférences d'un utilisateur (search_query, location, etc.)."""
+        if not prefs_data:
+            logger.warning("Aucune préférence à mettre à jour n'a été fournie.")
+            return False
+
+        # Construire dynamiquement la requête SQL
+        set_clauses = [f'"{key}" = %s' for key in prefs_data.keys()]
+        query = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = %s"
+        
+        values = list(prefs_data.values()) + [user_id]
+
+        try:
+            self._execute_query(query, tuple(values))
+            logger.info(f"Préférences mises à jour pour l'utilisateur ID {user_id}.")
+            return True
+        except Exception as e:
+            logger.error(f"Erreur lors de la mise à jour des préférences pour l'utilisateur ID {user_id}: {e}")
+            return False
 
     def reset_job_applications_table(self):
         """Supprime et recrée la table 'job_applications' pour une réinitialisation propre."""

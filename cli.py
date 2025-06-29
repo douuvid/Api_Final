@@ -4,10 +4,12 @@ import logging
 import os
 import shutil
 import uuid
+import subprocess
 
 # Importer le module de base de données
 from database.user_database import UserDatabase
 from auth import get_password_hash
+from utils.data_exporter import export_to_csv
 
 # --- Fonctions d'aide pour l'affichage en console ---
 
@@ -231,7 +233,6 @@ def handle_user_command(args):
     db = UserDatabase()
     try:
         if args.subcommand == 'create':
-            # Logique pour créer un utilisateur
             hashed_password = get_password_hash(args.password)
             user_data = {
                 'email': args.email,
@@ -242,10 +243,9 @@ def handle_user_command(args):
                 'location': args.location
             }
             new_user = db.create_user(user_data, hashed_password)
-            print(f"✅ Utilisateur '{new_user['email']}' créé avec succès avec l'ID {new_user['id']}.")
+            print(f"Utilisateur '{new_user['email']}' créé avec succès avec l'ID {new_user['id']}.")
 
         elif args.subcommand == 'update-docs':
-            # Logique pour mettre à jour les documents
             user = db.get_user_by_email(args.email)
             if not user:
                 print(f"Erreur : Utilisateur avec l'email '{args.email}' non trouvé.")
@@ -258,35 +258,118 @@ def handle_user_command(args):
             new_cv_path = None
             if args.cv_path:
                 if not os.path.exists(args.cv_path):
-                    print(f"❌ Fichier CV non trouvé à l'emplacement : {args.cv_path}")
+                    print(f"Fichier CV non trouvé à l'emplacement : {args.cv_path}")
                     return
-                # Générer un nom de fichier unique
                 cv_filename = f"{user_id}_cv_{uuid.uuid4().hex}.pdf"
                 new_cv_path = os.path.join(upload_dir, cv_filename)
                 shutil.copy(args.cv_path, new_cv_path)
-                print(f"✅ CV copié vers : {new_cv_path}")
+                print(f"CV copié vers : {new_cv_path}")
 
             new_lm_path = None
             if args.lm_path:
                 if not os.path.exists(args.lm_path):
-                    print(f"❌ Fichier LM non trouvé à l'emplacement : {args.lm_path}")
+                    print(f"Fichier LM non trouvé à l'emplacement : {args.lm_path}")
                     return
-                # Générer un nom de fichier unique
                 lm_filename = f"{user_id}_lm_{uuid.uuid4().hex}.pdf"
                 new_lm_path = os.path.join(upload_dir, lm_filename)
                 shutil.copy(args.lm_path, new_lm_path)
-                print(f"✅ LM copiée vers : {new_lm_path}")
+                print(f"LM copiée vers : {new_lm_path}")
 
-            # Mettre à jour la base de données
             db.update_user_document_paths(user_id, cv_path=new_cv_path, lm_path=new_lm_path)
-            print(f"✅ Chemins des documents mis à jour pour l'utilisateur '{args.email}'.")
+            print(f"Chemins des documents mis à jour pour l'utilisateur '{args.email}'.")
 
-        elif args.command == 'reset-apps':
-            print("Réinitialisation de la base de données des candidatures...")
-            db.reset_job_applications_table()
+            if args.lancer_scraper:
+                print(f"\nLancement du scraper iQuesta pour l'utilisateur {args.email}...")
+                # Construire le chemin absolu vers le scraper
+                base_dir = os.path.dirname(__file__)
+                scraper_path = os.path.join(base_dir, 'scrapers', 'site etudiant', 'iquestra', 'iquestra.py')
+                
+                try:
+                    # Lancer le scraper. La sortie s'affichera directement dans le terminal
+                    # car stdout/stderr ne sont pas redirigés.
+                    process = subprocess.Popen(['python3', scraper_path, '--email', args.email], text=True)
+                    
+                    # Attendre la fin du processus
+                    process.wait()
+                    
+                    # Vérifier le code de retour après la fin du processus
+                    if process.returncode == 0:
+                        print("\n--- Scraper terminé ---")
+                    else:
+                        print(f"\n--- Le scraper s'est terminé avec une erreur (code {process.returncode}) ---")
+
+                except FileNotFoundError:
+                    print(f"ERREUR CRITIQUE : Le script du scraper est introuvable à l'emplacement '{scraper_path}'")
+                except Exception as e:
+                    print(f"ERREUR CRITIQUE : Une erreur inattendue est survenue lors du lancement du scraper : {e}")
+
+        elif args.subcommand == 'reset-apps':
+            user = db.get_user_by_email(args.email)
+            if not user:
+                print(f"Utilisateur {args.email} non trouvé.")
+                return
+
+            user_id = user['id']
+            print(f"Réinitialisation des candidatures pour {args.email}...")
+            if db.reset_user_applications(user_id):
+                print(f"Candidatures pour {args.email} réinitialisées avec succès.")
+            else:
+                print(f"Échec de la réinitialisation des candidatures pour {args.email}.")
+
+        elif args.subcommand == 'download-report':
+            user = db.get_user_by_email(args.email)
+            if not user:
+                print(f"Utilisateur {args.email} non trouvé.")
+                return
+            
+            user_id = user['id']
+            print(f"Génération du rapport de candidatures pour {args.email}...")
+            applications = db.get_user_applications(user_id)
+
+            if not applications:
+                print("Aucune candidature trouvée pour cet utilisateur.")
+                return
+
+            # Renommer les clés pour des en-têtes plus clairs en français
+            report_data = []
+            for app in applications:
+                report_data.append({
+                    'Titre': app.get('title'),
+                    'Entreprise': app.get('company'),
+                    'Lieu': app.get('location'),
+                    'Statut': app.get('status'),
+                    'Date': app.get('applied_at').strftime('%Y-%m-%d %H:%M'),
+                    'Lien': app.get('offer_url'),
+                    'Description': app.get('description')
+                })
+            
+            export_to_csv(args.email, report_data, report_type='candidatures', subdirectory='report_iquestra')
+            
+        elif args.subcommand == 'update-prefs':
+            user = db.get_user_by_email(args.email)
+            if not user:
+                print(f"Utilisateur {args.email} non trouvé.")
+                return
+
+            prefs_to_update = {}
+            if args.search_query:
+                prefs_to_update['search_query'] = args.search_query
+            if args.location:
+                prefs_to_update['location'] = args.location
+            if args.contract_type:
+                prefs_to_update['contract_type'] = args.contract_type
+
+            if not prefs_to_update:
+                print("Aucune préférence à mettre à jour n'a été spécifiée.")
+                return
+
+            if db.update_user_prefs(user['id'], prefs_to_update):
+                print(f"Préférences mises à jour pour {args.email}.")
+            else:
+                print(f"Échec de la mise à jour des préférences pour {args.email}.")
 
     except Exception as e:
-        print(f"❌ Une erreur est survenue : {e}")
+        print(f"Une erreur est survenue : {e}")
     finally:
         db.close()
 
@@ -303,10 +386,6 @@ def handle_db(args):
 def main():
     """Point d'entrée principal pour l'application CLI."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    
-    # if not all([offres_client, lbb_client, romeo_client, soft_skills_client, contexte_client]):
-    #     logging.error("❌ Un ou plusieurs clients API n'ont pas pu être initialisés. Vérifiez la configuration.")
-    #     sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Client pour les API de France Travail.")
     subparsers = parser.add_subparsers(dest='command', help='Commandes disponibles', required=True)
@@ -367,9 +446,17 @@ def main():
 
     # Commande 'user'
     parser_user = subparsers.add_parser('user', help='Gérer les utilisateurs.')
-    user_subparsers = parser_user.add_subparsers(dest='subcommand', help='Sous-commandes pour les utilisateurs', required=True)
+    user_subparsers = parser_user.add_subparsers(dest='subcommand', required=True, help='Sous-commandes utilisateur')
 
-    # Sous-commande 'user create'
+    # Sous-commande 'update-prefs'
+    prefs_parser = user_subparsers.add_parser('update-prefs', help='Mettre à jour les préférences de recherche d\'un utilisateur.')
+    prefs_parser.add_argument('--email', type=str, required=True, help='Email de l\'utilisateur à mettre à jour.')
+    prefs_parser.add_argument('--search-query', type=str, help='Nouveau poste recherché.')
+    prefs_parser.add_argument('--location', type=str, help='Nouveau lieu de recherche.')
+    prefs_parser.add_argument('--contract-type', type=str, help='Nouveau type de contrat.')
+    prefs_parser.set_defaults(func=handle_user_command)
+
+    # Sous-commande 'create'
     parser_user_create = user_subparsers.add_parser('create', help='Créer un nouvel utilisateur.')
     parser_user_create.add_argument('--email', required=True, help="Email de l'utilisateur.")
     parser_user_create.add_argument('--password', required=True, help="Mot de passe de l'utilisateur.")
@@ -385,19 +472,18 @@ def main():
     parser_user_update.add_argument('--email', required=True, help="Email de l'utilisateur à mettre à jour.")
     parser_user_update.add_argument('--cv-path', help="Chemin complet vers le nouveau fichier CV.")
     parser_user_update.add_argument('--lm-path', help="Chemin complet vers le nouveau fichier LM.")
+    parser_user_update.add_argument('--lancer-scraper', action='store_true', help='Lancer le scraper iQuesta immédiatement après la mise à jour.')
     parser_user_update.set_defaults(func=handle_user_command)
 
     # Sous-commande 'user reset-apps'
-    parser_user_reset = user_subparsers.add_parser('reset-apps', help="Réinitialise la table des candidatures pour corriger les erreurs de schéma.")
-    parser_user_reset.set_defaults(command='reset-apps', func=handle_user_command)
+    parser_user_reset = user_subparsers.add_parser('reset-apps', help="Réinitialise les candidatures pour un utilisateur spécifique.")
+    parser_user_reset.add_argument('--email', required=True, help="Email de l'utilisateur dont les candidatures seront supprimées.")
+    parser_user_reset.set_defaults(func=handle_user_command)
 
-    # Sous-commande 'user update-prefs'
-    parser_user_update_prefs = user_subparsers.add_parser('update-prefs', help="Mettre à jour les préférences de recherche d'un utilisateur.")
-    parser_user_update_prefs.add_argument('--email', required=True, help="Email de l'utilisateur à mettre à jour.")
-    parser_user_update_prefs.add_argument('--search-query', help="Nouveau poste recherché.")
-    parser_user_update_prefs.add_argument('--contract-type', help="Nouveau type de contrat (ex: 'Stage', 'Contrat en alternance').")
-    parser_user_update_prefs.add_argument('--location', help="Nouveau lieu de recherche.")
-    parser_user_update_prefs.set_defaults(command='update-prefs', func=handle_user_command)
+    # Sous-commande 'user download-report'
+    parser_user_download = user_subparsers.add_parser('download-report', help="Télécharge un rapport CSV des candidatures d'un utilisateur.")
+    parser_user_download.add_argument('--email', required=True, help="Email de l'utilisateur pour lequel générer le rapport.")
+    parser_user_download.set_defaults(func=handle_user_command)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):
@@ -405,5 +491,32 @@ def main():
     else:
         parser.print_help()
 
-if __name__ == '__main__':
-    main()
+def reset_apps(email: str):
+    """Réinitialise (supprime) toutes les candidatures pour un utilisateur donné."""
+    db = None
+    try:
+        db = UserDatabase()
+        user = db.get_user_by_email(email)
+        if not user:
+            print(f"Utilisateur {email} non trouvé.")
+            return
+        
+        user_id = user['id']
+        if db.reset_user_applications(user_id):
+            print(f"✅ Toutes les candidatures pour {email} ont été supprimées.")
+        else:
+            print(f"❌ Échec de la suppression des candidatures pour {email}.")
+
+    except Exception as e:
+        print(f"Une erreur est survenue : {e}")
+    finally:
+        if db:
+            db.close()
+
+if __name__ == "__main__":
+    # Check if a typer command is being invoked
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] in ["reset-apps"]:
+        app()
+    else:
+        main()
