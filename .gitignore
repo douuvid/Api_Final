@@ -1,77 +1,21 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environment
+# Environnements virtuels
 venv/
-env/
-ENV/
+.venv/
 
-# Environment variables
+# Fichiers de compilation Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Fichiers de configuration locaux
 .env
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-
-# Logs
+# Fichiers générés
+reports/
+*.csv
 *.log
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
+# Base de données locale
+app.db*
 
-# Fichiers de sauvegarde
-*.bak
-
-# Dossier d'archivage
-archive/
-
-# Fichiers redondants
-france_travail/requirements.txt
-france_travail/setup.py
-client_fix.py
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Exemples et tests
-/examples/
-/tests/
-
-# Fichiers spécifiques
-/france_travail/alternative_client.py
-
-/france_travail/utils.py
-dossier_pole_emploi/candidatures_france_travail.csv
-
-# Fichiers uploadés par les utilisateurs
-upload_cv_lm_utilisateur/
