@@ -1,20 +1,13 @@
 import argparse
 import sys
 import logging
-
-# Importer les clients initialisés depuis app.py
-# Cela nous évite de dupliquer la logique d'initialisation
-from app import (
-    offres_client,
-    lbb_client,
-    romeo_client,
-    soft_skills_client,
-    contexte_client,
-    cv_parser
-)
+import os
+import shutil
+import uuid
 
 # Importer le module de base de données
-from database import UserDatabase, DatabaseConfig
+from database.user_database import UserDatabase
+from auth import get_password_hash
 
 # --- Fonctions d'aide pour l'affichage en console ---
 
@@ -233,13 +226,87 @@ def handle_db(args):
         else:
             print("\n❌ Échec de l'initialisation de la base de données. Vérifiez votre configuration .env et que PostgreSQL est en cours d'exécution.")
 
+def handle_user_command(args):
+    """Gère les commandes liées aux utilisateurs."""
+    db = UserDatabase()
+    try:
+        if args.subcommand == 'create':
+            # Logique pour créer un utilisateur
+            hashed_password = get_password_hash(args.password)
+            user_data = {
+                'email': args.email,
+                'first_name': args.first_name,
+                'last_name': args.last_name,
+                'search_query': args.search_query,
+                'contract_type': args.contract_type,
+                'location': args.location
+            }
+            new_user = db.create_user(user_data, hashed_password)
+            print(f"✅ Utilisateur '{new_user['email']}' créé avec succès avec l'ID {new_user['id']}.")
+
+        elif args.subcommand == 'update-docs':
+            # Logique pour mettre à jour les documents
+            user = db.get_user_by_email(args.email)
+            if not user:
+                print(f"Erreur : Utilisateur avec l'email '{args.email}' non trouvé.")
+                return
+
+            user_id = user['id']
+            upload_dir = os.path.join(os.path.dirname(__file__), 'upload_cv_lm_utilisateur')
+            os.makedirs(upload_dir, exist_ok=True)
+
+            new_cv_path = None
+            if args.cv_path:
+                if not os.path.exists(args.cv_path):
+                    print(f"❌ Fichier CV non trouvé à l'emplacement : {args.cv_path}")
+                    return
+                # Générer un nom de fichier unique
+                cv_filename = f"{user_id}_cv_{uuid.uuid4().hex}.pdf"
+                new_cv_path = os.path.join(upload_dir, cv_filename)
+                shutil.copy(args.cv_path, new_cv_path)
+                print(f"✅ CV copié vers : {new_cv_path}")
+
+            new_lm_path = None
+            if args.lm_path:
+                if not os.path.exists(args.lm_path):
+                    print(f"❌ Fichier LM non trouvé à l'emplacement : {args.lm_path}")
+                    return
+                # Générer un nom de fichier unique
+                lm_filename = f"{user_id}_lm_{uuid.uuid4().hex}.pdf"
+                new_lm_path = os.path.join(upload_dir, lm_filename)
+                shutil.copy(args.lm_path, new_lm_path)
+                print(f"✅ LM copiée vers : {new_lm_path}")
+
+            # Mettre à jour la base de données
+            db.update_user_document_paths(user_id, cv_path=new_cv_path, lm_path=new_lm_path)
+            print(f"✅ Chemins des documents mis à jour pour l'utilisateur '{args.email}'.")
+
+        elif args.command == 'reset-apps':
+            print("Réinitialisation de la base de données des candidatures...")
+            db.reset_job_applications_table()
+
+    except Exception as e:
+        print(f"❌ Une erreur est survenue : {e}")
+    finally:
+        db.close()
+
+def handle_db(args):
+    """Gère les commandes liées à la base de données."""
+    if args.subcommand == 'init':
+        try:
+            db = UserDatabase()
+            db.close()
+            print("✅ Base de données initialisée avec succès.")
+        except Exception as e:
+            print(f"❌ Erreur lors de l'initialisation de la base de données : {e}")
+
 def main():
     """Point d'entrée principal pour l'application CLI."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
-    if not all([offres_client, lbb_client, romeo_client, soft_skills_client, contexte_client]):
-        logging.critical("Un ou plusieurs clients API n'ont pas pu être initialisés. Arrêt du programme.")
-        sys.exit(1)
+    # if not all([offres_client, lbb_client, romeo_client, soft_skills_client, contexte_client]):
+    #     logging.error("❌ Un ou plusieurs clients API n'ont pas pu être initialisés. Vérifiez la configuration.")
+    #     sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Client pour les API de France Travail.")
     subparsers = parser.add_subparsers(dest='command', help='Commandes disponibles', required=True)
@@ -297,6 +364,40 @@ def main():
     # Sous-commande 'db init'
     parser_db_init = db_subparsers.add_parser('init', help='Initialiser la base de données et créer les tables.')
     parser_db_init.set_defaults(func=handle_db)
+
+    # Commande 'user'
+    parser_user = subparsers.add_parser('user', help='Gérer les utilisateurs.')
+    user_subparsers = parser_user.add_subparsers(dest='subcommand', help='Sous-commandes pour les utilisateurs', required=True)
+
+    # Sous-commande 'user create'
+    parser_user_create = user_subparsers.add_parser('create', help='Créer un nouvel utilisateur.')
+    parser_user_create.add_argument('--email', required=True, help="Email de l'utilisateur.")
+    parser_user_create.add_argument('--password', required=True, help="Mot de passe de l'utilisateur.")
+    parser_user_create.add_argument('--first-name', required=True, help="Prénom de l'utilisateur.")
+    parser_user_create.add_argument('--last-name', required=True, help="Nom de l'utilisateur.")
+    parser_user_create.add_argument('--search-query', help="Poste recherché par défaut.")
+    parser_user_create.add_argument('--contract-type', help="Type de contrat par défaut.")
+    parser_user_create.add_argument('--location', help="Lieu de recherche par défaut.")
+    parser_user_create.set_defaults(func=handle_user_command)
+
+    # Sous-commande 'user update-docs'
+    parser_user_update = user_subparsers.add_parser('update-docs', help="Mettre à jour le CV et la LM d'un utilisateur.")
+    parser_user_update.add_argument('--email', required=True, help="Email de l'utilisateur à mettre à jour.")
+    parser_user_update.add_argument('--cv-path', help="Chemin complet vers le nouveau fichier CV.")
+    parser_user_update.add_argument('--lm-path', help="Chemin complet vers le nouveau fichier LM.")
+    parser_user_update.set_defaults(func=handle_user_command)
+
+    # Sous-commande 'user reset-apps'
+    parser_user_reset = user_subparsers.add_parser('reset-apps', help="Réinitialise la table des candidatures pour corriger les erreurs de schéma.")
+    parser_user_reset.set_defaults(command='reset-apps', func=handle_user_command)
+
+    # Sous-commande 'user update-prefs'
+    parser_user_update_prefs = user_subparsers.add_parser('update-prefs', help="Mettre à jour les préférences de recherche d'un utilisateur.")
+    parser_user_update_prefs.add_argument('--email', required=True, help="Email de l'utilisateur à mettre à jour.")
+    parser_user_update_prefs.add_argument('--search-query', help="Nouveau poste recherché.")
+    parser_user_update_prefs.add_argument('--contract-type', help="Nouveau type de contrat (ex: 'Stage', 'Contrat en alternance').")
+    parser_user_update_prefs.add_argument('--location', help="Nouveau lieu de recherche.")
+    parser_user_update_prefs.set_defaults(command='update-prefs', func=handle_user_command)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):

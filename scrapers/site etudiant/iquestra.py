@@ -15,13 +15,24 @@ from dotenv import load_dotenv
 # Ajout du chemin racine pour les imports locaux
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from database.user_database import UserDatabase
+import logging
 
-# Charger les variables d'environnement depuis le fichier .env
-load_dotenv()
+# Configuration du logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
+# Construire le chemin absolu vers le fichier .env à la racine du projet
+# Cela garantit que le bon utilisateur est toujours chargé.
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+dotenv_path = os.path.join(project_root, '.env')
+load_dotenv(dotenv_path=dotenv_path, override=True)
 
 # --- CONFIGURATION ---
 # L'email de l'utilisateur pour lequel lancer le scraper est récupéré depuis .env
 USER_EMAIL = os.getenv("USER_EMAIL")
+
+# Ajout d'un print de débogage pour vérifier l'email chargé
+print(f"--- DEBUG: Email chargé depuis .env pour le scraping : {USER_EMAIL} ---")
 # ---------------------
 
 # Vérification de la variable d'environnement essentielle
@@ -84,6 +95,7 @@ def rechercher_offres(driver, metier, region_text):
             print(f"- Région sélectionnée : '{region_text}'")
 
         # 3. Bouton Rechercher (type='submit' dans le formulaire)
+        # 3. Bouton Rechercher (type='submit' dans le formulaire)
         bouton_rechercher = driver.find_element(By.CSS_SELECTOR, "form button[type='submit']")
         bouton_rechercher.click()
         print("✅ Recherche lancée !")
@@ -95,58 +107,88 @@ def rechercher_offres(driver, metier, region_text):
             f.write(driver.page_source)
         return False
 
-def filtrer_par_contrat(driver, contract_type_text):
-    """Sélectionne le type de contrat et relance la recherche."""
-    print(f"\n📄 Filtrage par type de contrat : '{contract_type_text}'...")
+def affiner_recherche_par_contrat(driver, contract_type):
+    """Sélectionne le type de contrat et clique sur le bouton de recherche."""
+    print(f"\n🔍 Affinage de la recherche pour le type de contrat : '{contract_type}'...")
+
+    # Dictionnaire de correspondance pour traduire les préférences utilisateur en options du site
+    contract_map = {
+        "CDI": "Emploi",
+        "CDD": "Emploi",
+        "Alternance": "Contrat en alternance",
+        "Stage": "Stage"
+    }
+
+    target_option_text = contract_map.get(contract_type)
+
+    if not target_option_text:
+        print(f"⚠️ Type de contrat '{contract_type}' non reconnu. Le filtre ne sera pas appliqué.")
+        return False
+
     try:
-        # Utiliser l'ID 'selectContract' fourni par l'utilisateur
+        # 1. Sélectionner le type de contrat dans le menu déroulant
         select_contract_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "selectContract"))
         )
         select_object = Select(select_contract_element)
-        select_object.select_by_visible_text(contract_type_text)
-        print(f"✅ Contrat '{contract_type_text}' sélectionné.")
+        select_object.select_by_visible_text(target_option_text)
+        print(f"- Type de contrat '{target_option_text}' sélectionné.")
 
-        # Le formulaire a l'ID 'offerFormSearch', on clique sur le bouton submit dedans
-        form = driver.find_element(By.ID, "offerFormSearch")
-        bouton_rechercher = form.find_element(By.CSS_SELECTOR, "button[type='submit']")
-        bouton_rechercher.click()
-        print("✅ Filtres appliqués.")
-        # Attendre que la page se recharge avec les résultats filtrés
-        WebDriverWait(driver, 10).until(EC.staleness_of(bouton_rechercher))
+        # 2. La page se recharge automatiquement, on attend simplement
+        time.sleep(3)  # Attente pour que les résultats se mettent à jour
+        print("✅ Recherche affinée.")
         return True
     except Exception as e:
-        print(f"❌ Erreur lors du filtrage par contrat : {e}")
+        print(f"❌ Erreur lors de l'affinage par contrat : {e}")
+        return False
+        print("✅ Recherche affinée avec succès.")
+        return True
+
+    except (TimeoutException, NoSuchElementException) as e:
+        print(f"❌ Erreur lors de l'affinage de la recherche par contrat : {e}")
         return False
 
-def cliquer_premiere_offre(driver):
-    """Clique sur la première offre dans les résultats."""
-    print("\n📄 Analyse de la page de résultats après filtrage...")
+def recuperer_liens_offres(driver):
+    """Récupère tous les liens des offres sur la page de résultats."""
+    print("\n🔗 Récupération des liens des offres...")
     try:
-        # Nouveau sélecteur basé sur l'analyse du fichier iquesta_results_debug.html.
-        # Les liens des offres semblent avoir la classe 'fw-bold' après filtrage.
-        premier_lien = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a.fw-bold"))
+        liens_elements = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a.fw-bold"))
         )
-        print("✅ Première offre trouvée. Clic en cours...")
-        driver.execute_script("arguments[0].click();", premier_lien)
-        return True
-    except Exception as e:
-        print(f"❌ Erreur lors du clic sur la première offre. Le sélecteur 'a.fw-bold' est probablement obsolète ou non unique.")
-        print("💾 Sauvegarde du HTML de la page de résultats dans 'iquesta_results_debug.html' pour analyse...")
-        with open("iquesta_results_debug.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-        print("💡 Ouvrez ce fichier et cherchez le lien de la première offre pour trouver le bon sélecteur CSS.")
+        liens = [elem.get_attribute('href') for elem in liens_elements]
+        print(f"✅ {len(liens)} offres trouvées sur la page.")
+        return liens
+    except TimeoutException:
+        print("❌ Aucune offre trouvée sur la page de résultats.")
+        return []
+
+def verifier_et_postuler(driver, user_data):
+    """Vérifie si l'offre est interne et lance la candidature si c'est le cas."""
+    try:
+        # Cherche le bouton qui mène au formulaire de candidature interne d'iQuesta
+        bouton_postuler_interne = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='/applications/connectJobPass/']"))
+        )
+        print("✅ Offre avec candidature interne détectée.")
+        bouton_postuler_interne.click()
+        # Une fois sur la page du formulaire, on appelle la fonction de remplissage
+        return remplir_formulaire_candidature(driver, user_data)
+    except TimeoutException:
+        # Si ce bouton n'est pas trouvé, on considère que c'est une redirection externe
+        print("ℹ️ Offre externe (pas de formulaire iQuesta). Ignorée.")
         return False
 
 def remplir_formulaire_candidature(driver, user_data):
-    """Remplit le formulaire de candidature."""
+    """Remplit le formulaire de candidature.
+
+    Cette fonction est maintenant appelée APRES avoir cliqué sur le bouton
+    de candidature interne.
+    """
     print("\n📝 Remplissage du formulaire de candidature...")
     try:
-        # La page de l'offre se charge dans le même onglet, il n'est donc pas nécessaire de basculer.
         print("- Page du formulaire de candidature atteinte.")
 
-        # Remplir les champs du formulaire en utilisant les sélecteurs trouvés
+        # Remplir les champs du formulaire
         print("- Remplissage de l'e-mail...")
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "application-email"))
@@ -218,72 +260,115 @@ def main():
         print("❌ La variable d'environnement USER_EMAIL n'est pas définie.")
         return
 
+    driver = None
+    db = None  # Initialiser db à None
     try:
-        driver = initialiser_driver()
+        # Initialisation de la base de données en premier
+        print("📚 Connexion à la base de données...")
         db = UserDatabase()
         user_data = db.get_user_by_email(USER_EMAIL)
-        db.close()
-
-        if not user_data:
-            return
-
-        first_name = user_data['first_name']
-        last_name = user_data['last_name']
-        cv_path = user_data.get('cv_path')
-        lm_path = user_data.get('lm_path')
-
-        if not all([cv_path, lm_path]):
-            print("❌ CV ou lettre de motivation manquant pour l'utilisateur.")
-            return
-
-        driver.get("https://www.iquesta.com/")
-        gerer_cookies(driver)
         
-        # Récupérer les préférences de recherche de l'utilisateur
+        if not user_data:
+            print(f"❌ Aucun utilisateur trouvé avec l'e-mail : {USER_EMAIL}. Vérifiez la base de données.")
+            return
+
+        user_id = user_data['id']
+        print(f"👤 Utilisateur '{user_data.get('first_name')}' (ID: {user_id}) trouvé.")
+        
+        # Vérification des fichiers CV/LM
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        cv_path_relative = user_data.get('cv_path')
+        lm_path_relative = user_data.get('lm_path')
+
+        if not cv_path_relative or not lm_path_relative:
+            logger.error("❌ ERREUR CRITIQUE : Le chemin du CV ou de la LM n'est pas enregistré pour cet utilisateur.")
+            logger.info("🛑 Arrêt du script.")
+            db.close()
+            sys.exit(1)
+
+        cv_path = os.path.join(project_root, cv_path_relative)
+        lm_path = os.path.join(project_root, lm_path_relative)
+
+        if not os.path.exists(cv_path) or not os.path.exists(lm_path):
+            logger.error(f"""❌ ERREUR CRITIQUE : Fichier CV ou LM introuvable. Vérifiez les chemins.
+   - Chemin CV cherché : {cv_path}
+   - Chemin LM cherché : {lm_path}""")
+            logger.info("🛑 Arrêt du script.")
+            db.close()
+            sys.exit(1)
+        logger.info("✅ Chemins des fichiers CV et LM validés.")
+
+        # --- 2. Récupérer les préférences de recherche de l'utilisateur ---
         search_query = user_data.get('search_query')
         location = user_data.get('location')
         contract_type = user_data.get('contract_type')
 
-        # Utiliser des valeurs par défaut si non spécifiées et informer l'utilisateur
-        if not search_query:
-            search_query = "stage informatique" # Valeur par défaut
-            print(f"INFO: Pas de poste recherché spécifié, utilisation de la valeur par défaut : '{search_query}'")
-        if not location:
-            location = "Toute la France" # Valeur par défaut
-            print(f"INFO: Pas de localisation spécifiée, utilisation de la valeur par défaut : '{location}'")
+        if not search_query or not location:
+            logger.error("❌ ERREUR CRITIQUE : Le métier (search_query) ou le lieu (location) ne sont pas définis. Veuillez les configurer.")
+            logger.info("🛑 Arrêt du script.")
+            db.close()
+            sys.exit(1)
 
-        # Lancer la recherche avec les paramètres de l'utilisateur
-        if rechercher_offres(driver, metier=search_query, region=location):
-            # Filtrer par type de contrat uniquement s'il est spécifié
-            should_proceed = False
+        print(f"ℹ️ Préférences de recherche : Poste='{search_query}', Lieu='{location}', Contrat='{contract_type or 'Non spécifié'}'")
+
+        driver = initialiser_driver()
+
+        driver.get("https://www.iquesta.com/")
+        gerer_cookies(driver)
+        
+        if rechercher_offres(driver, metier=search_query, region_text=location):
+            # Après la recherche initiale, on affine par type de contrat si spécifié
             if contract_type:
-                if filtrer_par_contrat(driver, contract_type):
-                    should_proceed = True
+                if not affiner_recherche_par_contrat(driver, contract_type):
+                    print("⚠️ L'affinage par contrat a échoué. Le script continue avec les résultats actuels.")
             else:
-                print("INFO: Pas de type de contrat spécifié, le filtre ne sera pas appliqué.")
-                should_proceed = True # Continuer sans filtrer
+                print("ℹ️ Pas de type de contrat spécifié, le filtre ne sera pas appliqué.")
 
-            if should_proceed:
-                # Cliquer sur la première offre
-                if cliquer_premiere_offre(driver):
-                    # Remplir le formulaire
-                    if remplir_formulaire_candidature(driver, user_data):
-                        print("\n🎉 Processus de candidature terminé !")
+            # On peut maintenant traiter les offres (filtrées ou non)
+            try:
+                liens_offres = recuperer_liens_offres(driver)
+                if not liens_offres:
+                    print("ℹ️ Aucune offre à traiter sur la page de résultats. Fin du script.")
+                    return
+
+                candidature_reussie = False
+                for i, lien in enumerate(liens_offres):
+                    print(f"\n--- Traitement de l'offre {i+1}/{len(liens_offres)} ---")
+                    
+                    if db.check_if_applied(user_id, lien):
+                        print("✅ Offre déjà enregistrée dans la base de données. Ignorée.")
+                        continue
+                    
+                    driver.get(lien)
+                    
+                    if verifier_et_postuler(driver, user_data):
+                        db.record_application(user_id, lien)
+                        candidature_reussie = True
+                        print("\n🎉 Processus de candidature terminé et enregistré !")
+                        break # Sortir de la boucle après une candidature réussie
                     else:
-                        print("\n❌ Échec de la soumission de la candidature.")
-                else:
-                    print("❌ Échec du clic sur l'offre après filtrage.")
-            else:
-                print("❌ Échec du filtrage par contrat.")
+                        print("-> Offre non traitable, retour à la page de résultats.")
+                        driver.back()
+                        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "offerFormSearch")))
+
+                if not candidature_reussie:
+                    print("\nℹ️ Aucune nouvelle offre interne et traitable n'a été trouvée sur cette page.")
+
+            except Exception as e:
+                print(f"💥 Une erreur est survenue lors du traitement des offres : {e}")
         else:
             print("❌ Échec de la recherche initiale.")
 
+    except Exception as e:
+        print(f"💥 Une erreur inattendue est survenue dans main: {e}")
     finally:
-        if 'driver' in locals() and driver:
+        if driver:
             print(f"\n👀 Le navigateur restera ouvert {PAUSE_DURATION} secondes.")
             time.sleep(PAUSE_DURATION)
             print("🚪 Fermeture du navigateur.")
             driver.quit()
+        if db:
+            db.close()
 
 if __name__ == "__main__":
     main()

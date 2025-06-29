@@ -40,7 +40,10 @@
 
       <div class="form-group">
         <label for="location">Localisation:</label>
-        <input type="text" id="location" v-model="form.location" placeholder="Ex: Lyon, France">
+        <select id="location" v-model="form.location">
+          <option value="Toute la France">Toute la France</option>
+          <option v-for="region in regions" :key="region" :value="region">{{ region }}</option>
+        </select>
       </div>
 
       <button type="submit">S'inscrire</button>
@@ -62,8 +65,14 @@ export default {
         last_name: '',
         search_query: '',
         contract_type: '',
-        location: ''
+        location: 'Toute la France'
       },
+      regions: [
+        "Auvergne-Rhône-Alpes", "Bourgogne-Franche-Comté", "Bretagne", 
+        "Centre-Val de Loire", "Corse", "Grand Est", "Hauts-de-France", 
+        "Île-de-France", "Normandie", "Nouvelle-Aquitaine", "Occitanie", 
+        "Pays de la Loire", "Provence-Alpes-Côte d'Azur"
+      ],
       message: ''
     };
   },

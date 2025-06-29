@@ -62,6 +62,11 @@ class UserRegistration(BaseModel):
     contract_type: Optional[str] = None
     location: Optional[str] = None
 
+class UserPreferencesUpdate(BaseModel):
+    search_query: Optional[str] = None
+    contract_type: Optional[str] = None
+    location: Optional[str] = None
+
 class UserInDB(BaseModel):
     id: int
     email: EmailStr
@@ -161,6 +166,23 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     access_token = create_access_token(data={"sub": user['email']})
     return {"access_token": access_token, "token_type": "bearer"}
 
+@app.put("/users/me/preferences", response_model=UserInDB, tags=["Users"])
+def update_user_preferences(
+    preferences: UserPreferencesUpdate,
+    current_user: dict = Depends(get_current_user),
+    db: UserDatabase = Depends(get_db)
+):
+    """Met à jour les préférences de recherche de l'utilisateur."""
+    updated_user = db.update_user_preferences(
+        user_id=current_user['id'],
+        search_query=preferences.search_query,
+        contract_type=preferences.contract_type,
+        location=preferences.location
+    )
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé ou aucune mise à jour effectuée.")
+    return updated_user
+
 @app.get("/users/me", response_model=UserInDB, tags=["Users"])
 def read_users_me(current_user: dict = Depends(get_current_user)):
     """Récupère les informations de l'utilisateur actuellement connecté."""
@@ -218,3 +240,8 @@ def upload_document(
         if os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde du fichier.")
+
+if __name__ == "__main__":
+    import uvicorn
+    logger.info("🚀 Démarrage du serveur Uvicorn...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

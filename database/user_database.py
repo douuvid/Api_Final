@@ -80,7 +80,8 @@ class UserDatabase:
         return result
 
     def create_tables(self):
-        """Crée la table des utilisateurs si elle n'existe pas."""
+        """Crée les tables et s'assure que le schéma de la base de données est à jour."""
+        # --- Gestion de la table 'users' ---
         create_users_table = """
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -99,15 +100,28 @@ class UserDatabase:
         logger.info("Vérification de la table 'users'...")
         self._execute_query(create_users_table)
         
-        # S'assurer que les colonnes pour les documents existent (migration simple)
-        logger.info("Vérification des colonnes 'cv_path' et 'lm_path'...")
+        # Migrations simples pour la table 'users'
+        logger.info("Mise à jour du schéma de la table 'users' si nécessaire...")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS cv_path VARCHAR(255);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS lm_path VARCHAR(255);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS search_query VARCHAR(255);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS contract_type VARCHAR(100);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);")
-        
         logger.info("✅ Table 'users' prête et à jour.")
+
+        # --- Gestion de la table 'job_applications' ---
+        logger.info("Vérification de la table 'job_applications'...")
+        create_applications_table = """
+        CREATE TABLE IF NOT EXISTS job_applications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            offer_url VARCHAR(2048) NOT NULL, 
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, offer_url)
+        );
+        """
+        self._execute_query(create_applications_table)
+        logger.info("✅ Table 'job_applications' prête.")
 
     def get_user_by_email(self, email: str):
         """Récupère un utilisateur par son email."""
@@ -151,4 +165,60 @@ class UserDatabase:
         params.append(user_id)
         
         logger.info(f"Mise à jour des documents pour l'utilisateur ID {user_id}...")
+        return self._execute_query(query, tuple(params), fetch='one')
+
+    def record_application(self, user_id: int, offer_url: str):
+        """Enregistre une candidature pour un utilisateur."""
+        query = """
+        INSERT INTO job_applications (user_id, offer_url) VALUES (%s, %s) ON CONFLICT (user_id, offer_url) DO NOTHING;
+        """
+        try:
+            self._execute_query(query, (user_id, offer_url))
+            logger.info(f"Candidature enregistrée pour l'utilisateur {user_id} à l'offre {offer_url}")
+            return True
+        except Exception as e:
+            logger.error(f"Erreur lors de l'enregistrement de la candidature : {e}")
+            return False
+
+    def check_if_applied(self, user_id: int, offer_url: str) -> bool:
+        """Vérifie si un utilisateur a déjà postulé à une offre."""
+        query = "SELECT EXISTS(SELECT 1 FROM job_applications WHERE user_id = %s AND offer_url = %s);"
+        result = self._execute_query(query, (user_id, offer_url), fetch='one')
+        return result is not None
+
+    def reset_job_applications_table(self):
+        """Supprime et recrée la table 'job_applications' pour une réinitialisation propre."""
+        logger.warning("⚠️  Réinitialisation de la table 'job_applications'. Toutes les données de candidatures seront perdues.")
+        try:
+            self._execute_query("DROP TABLE IF EXISTS job_applications;")
+            logger.info("Ancienne table 'job_applications' supprimée.")
+            self.create_tables() # Recrée les tables avec le bon schéma
+            logger.info("✅ Table 'job_applications' réinitialisée avec succès.")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Erreur lors de la réinitialisation de la table : {e}")
+            return False
+
+    def update_user_preferences(self, user_id: int, search_query: str = None, contract_type: str = None, location: str = None):
+        """Met à jour les préférences de recherche pour un utilisateur."""
+        updates = []
+        params = []
+        if search_query is not None:
+            updates.append("search_query = %s")
+            params.append(search_query)
+        if contract_type is not None:
+            updates.append("contract_type = %s")
+            params.append(contract_type)
+        if location is not None:
+            updates.append("location = %s")
+            params.append(location)
+
+        if not updates:
+            logger.info("Aucune préférence à mettre à jour.")
+            return None
+
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING *;"
+        params.append(user_id)
+        
+        logger.info(f"Mise à jour des préférences pour l'utilisateur ID {user_id}...")
         return self._execute_query(query, tuple(params), fetch='one')

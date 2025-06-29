@@ -39,6 +39,41 @@
 
     <hr class="separator">
 
+    <hr class="separator">
+
+    <!-- Section Préférences de Recherche -->
+    <div class="preferences-section">
+      <h3>Mes préférences de recherche</h3>
+      <form @submit.prevent="handleUpdatePreferences" class="preferences-form">
+        <div class="form-group">
+          <label for="search_query">Poste recherché:</label>
+          <input type="text" id="search_query" v-model="preferencesForm.search_query" placeholder="Ex: Développeur Python">
+        </div>
+        <div class="form-group">
+          <label for="contract_type">Type de contrat:</label>
+          <select id="contract_type" v-model="preferencesForm.contract_type">
+            <option value="">Indifférent</option>
+            <option value="CDI">CDI</option>
+            <option value="CDD">CDD</option>
+            <option value="Stage">Stage</option>
+            <option value="Alternance">Alternance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="location">Localisation:</label>
+          <select id="location" v-model="preferencesForm.location">
+            <option value="Toute la France">Toute la France</option>
+            <option v-for="region in regions" :key="region" :value="region">{{ region }}</option>
+          </select>
+        </div>
+        <button type="submit">Mettre à jour les préférences</button>
+      </form>
+      <div v-if="preferencesMessage" class="feedback-message success">{{ preferencesMessage }}</div>
+      <div v-if="preferencesError" class="feedback-message error">{{ preferencesError }}</div>
+    </div>
+
+    <hr class="separator">
+
     <button @click="logout" class="logout-button">Se déconnecter</button>
   </div>
 </template>
@@ -53,7 +88,20 @@ export default {
       selectedCvFile: null,
       selectedLmFile: null,
       uploadMessage: '',
-      uploadError: ''
+      uploadError: '',
+      preferencesForm: {
+        search_query: '',
+        contract_type: '',
+        location: ''
+      },
+      regions: [
+        "Auvergne-Rhône-Alpes", "Bourgogne-Franche-Comté", "Bretagne", 
+        "Centre-Val de Loire", "Corse", "Grand Est", "Hauts-de-France", 
+        "Île-de-France", "Normandie", "Nouvelle-Aquitaine", "Occitanie", 
+        "Pays de la Loire", "Provence-Alpes-Côte d'Azur"
+      ],
+      preferencesMessage: '',
+      preferencesError: ''
     };
   },
   async created() {
@@ -71,6 +119,10 @@ export default {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         this.user = response.data;
+        // Populate preferences form
+        this.preferencesForm.search_query = this.user.search_query || '';
+        this.preferencesForm.contract_type = this.user.contract_type || '';
+        this.preferencesForm.location = this.user.location || 'Toute la France';
       } catch (error) {
         console.error('Erreur de récupération du profil:', error);
         this.logout(); // Logout if token is invalid or expired
@@ -119,6 +171,21 @@ export default {
         this.uploadError = `Échec de l'upload. ${error.response?.data?.detail || 'Veuillez réessayer.'}`;
       }
     },
+    async handleUpdatePreferences() {
+      this.preferencesMessage = '';
+      this.preferencesError = '';
+      const token = localStorage.getItem('access_token');
+      try {
+        const response = await axios.put('http://localhost:8080/users/me/preferences', this.preferencesForm, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        this.preferencesMessage = response.data.message || 'Préférences mises à jour avec succès !';
+        await this.fetchUserProfile(); // Refresh user data
+      } catch (error) {
+        console.error('Erreur lors de la mise à jour des préférences:', error);
+        this.preferencesError = `Échec de la mise à jour. ${error.response?.data?.detail || 'Veuillez réessayer.'}`;
+      }
+    },
     getFilename(path) {
         if (!path) return '';
         // Handles both Unix-like (/) and Windows (\) separators
@@ -146,6 +213,36 @@ export default {
 .user-info p {
   font-size: 1.1rem;
   line-height: 1.6;
+}
+.preferences-section {
+  margin-top: 2rem;
+}
+.preferences-form .form-group {
+  margin-bottom: 1rem;
+}
+.preferences-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.preferences-form input,
+.preferences-form select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+.preferences-form button {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+.preferences-form button:hover {
+  background-color: #0056b3;
 }
 .separator {
   border: 0;
