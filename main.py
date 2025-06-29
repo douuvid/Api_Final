@@ -1,10 +1,13 @@
 import os
 import sys
 import logging
+import shutil
+import uuid
+from typing import Optional
 
 # Ajoute la racine du projet au chemin Python pour résoudre les problèmes d'importation
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
@@ -21,8 +24,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Constantes ---
+UPLOAD_DIR = "upload_cv_lm_utilisateur"
+
 # --- Initialisation de FastAPI ---
-app = FastAPI(title="API Simple")
+app = FastAPI(
+    title="Job Search API",
+    description="API pour gérer les utilisateurs et les recherches d'emploi.",
+    version="1.0.0"
+)
 
 # --- Configuration CORS ---
 origins = [
@@ -31,6 +41,7 @@ origins = [
     "http://localhost:5174",
     "http://localhost:5175",
     "http://localhost:5177",
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
@@ -53,6 +64,8 @@ class UserInDB(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
+    cv_path: Optional[str] = None
+    lm_path: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -140,6 +153,59 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/users/me", response_model=UserInDB, tags=["Users"])
-def read_users_me(current_user: UserInDB = Depends(get_current_user)):
+def read_users_me(current_user: dict = Depends(get_current_user)):
     """Récupère les informations de l'utilisateur actuellement connecté."""
     return current_user
+
+@app.post("/users/me/upload-document", response_model=UserInDB, tags=["Users"])
+def upload_document(
+    file: UploadFile = File(...),
+    doc_type: str = Form(...), # 'cv' ou 'lm'
+    current_user: dict = Depends(get_current_user),
+    db: UserDatabase = Depends(get_db)
+):
+    print("\n\n!!!!!!!!!!!!!! POINT DE CONTRÔLE : DÉBUT DE L'UPLOAD !!!!!!!!!!!!!!\n\n")
+    """Permet à un utilisateur d'uploader son CV ou sa lettre de motivation."""
+    if doc_type not in ["cv", "lm"]:
+        raise HTTPException(status_code=400, detail="Le type de document doit être 'cv' ou 'lm'.")
+
+    # Crée un nom de fichier unique pour éviter les conflits
+    file_extension = os.path.splitext(file.filename)[1]
+    unique_filename = f"{current_user['id']}_{doc_type}_{uuid.uuid4().hex}{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+
+    try:
+        logger.info("--- Début de l'upload de document ---")
+        logger.info(f"Étape 1: Tentative de sauvegarde du fichier sur le disque à l'emplacement : {file_path}")
+        
+        # S'assurer que le répertoire d'upload existe
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+        # Sauvegarde le fichier sur le disque
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        logger.info(f"Étape 2: Fichier '{file.filename}' sauvegardé avec succès.")
+
+        # Met à jour le chemin dans la base de données
+        update_data = {}
+        if doc_type == "cv":
+            update_data['cv_path'] = file_path
+        else:
+            update_data['lm_path'] = file_path
+        
+        logger.info(f"Étape 3: Tentative de mise à jour de la base de données avec les informations : {update_data}")
+        updated_user = db.update_user_document_paths(user_id=current_user['id'], **update_data)
+        
+        if not updated_user:
+            raise Exception("La mise à jour de la base de données n'a retourné aucun utilisateur.")
+
+        logger.info("Étape 4: Mise à jour de la base de données réussie.")
+        return updated_user
+
+    except Exception as e:
+        logger.error(f"Erreur lors de l'upload du fichier pour {current_user['email']}: {e}", exc_info=True)
+        # Optionnel: supprimer le fichier si l'update DB échoue
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail="Erreur lors de la sauvegarde du fichier.")

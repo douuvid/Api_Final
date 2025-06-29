@@ -88,12 +88,22 @@ class UserDatabase:
             hashed_password VARCHAR(255) NOT NULL,
             first_name VARCHAR(100) NOT NULL,
             last_name VARCHAR(100) NOT NULL,
+            cv_path VARCHAR(255),
+            lm_path VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
         logger.info("Vérification de la table 'users'...")
         self._execute_query(create_users_table)
-        logger.info("✅ Table 'users' prête.")
+        
+        # S'assurer que les colonnes pour les documents existent (migration simple)
+        logger.info("Vérification des colonnes 'cv_path' et 'lm_path'...")
+        alter_cv_query = "ALTER TABLE users ADD COLUMN IF NOT EXISTS cv_path VARCHAR(255);"
+        alter_lm_query = "ALTER TABLE users ADD COLUMN IF NOT EXISTS lm_path VARCHAR(255);"
+        self._execute_query(alter_cv_query)
+        self._execute_query(alter_lm_query)
+        
+        logger.info("✅ Table 'users' prête et à jour.")
 
     def get_user_by_email(self, email: str):
         """Récupère un utilisateur par son email."""
@@ -114,3 +124,24 @@ class UserDatabase:
             user_data['last_name']
         )
         return self._execute_query(query, params, fetch='one')
+
+    def update_user_document_paths(self, user_id: int, cv_path: str = None, lm_path: str = None):
+        """Met à jour les chemins des documents pour un utilisateur."""
+        updates = []
+        params = []
+        if cv_path is not None:
+            updates.append("cv_path = %s")
+            params.append(cv_path)
+        if lm_path is not None:
+            updates.append("lm_path = %s")
+            params.append(lm_path)
+
+        if not updates:
+            logger.info("Aucun chemin de document à mettre à jour.")
+            return None
+
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = %s RETURNING *;"
+        params.append(user_id)
+        
+        logger.info(f"Mise à jour des documents pour l'utilisateur ID {user_id}...")
+        return self._execute_query(query, tuple(params), fetch='one')

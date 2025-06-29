@@ -72,3 +72,6 @@ Thumbs.db
 
 /france_travail/utils.py
 dossier_pole_emploi/candidatures_france_travail.csv
+
+# Fichiers uploadés par les utilisateurs
+upload_cv_lm_utilisateur/
