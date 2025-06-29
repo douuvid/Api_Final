@@ -6,6 +6,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from dotenv import load_dotenv
@@ -55,137 +57,210 @@ def gerer_cookies(driver):
     except TimeoutException:
         print("ℹ️ Pas de bannière de cookies détectée.")
 
-def rechercher_offres(driver, metier, region):
-    """Remplit le formulaire de recherche et lance la recherche."""
-    print(f"\n🔍 Lancement de la recherche pour '{metier}' en '{region}'...")
+def rechercher_offres(driver, metier, region_text):
+    """Remplit le formulaire de recherche en utilisant les ID du HTML fourni.
+    Priorité à la fonctionnalité directe.
+    """
+    print(f"\n🔍 Lancement de la recherche pour '{metier}' en '{region_text}' (méthode directe)..." )
     try:
-        champ_metier = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "query")))
+        # 1. Champ métier (ID: controlTerm)
+        champ_metier = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "controlTerm"))
+        )
+        champ_metier.clear()
         champ_metier.send_keys(metier)
         print(f"- Champ métier rempli : '{metier}'")
 
-        region_dropdown = driver.find_element(By.CSS_SELECTOR, "button[data-id='region']")
-        region_dropdown.click()
-        
-        option_xpath = f"//span[contains(text(), '{region}')]"
-        option_region = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, option_xpath)))
-        option_region.click()
-        print(f"- Région sélectionnée : '{region}'")
+        # 2. Région (ID: selectRegion)
+        if region_text == "Toute la France":
+            # On ne touche à rien, l'option par défaut est déjà "Toute la France"
+            print(f"- Région sélectionnée : '{region_text}' (par défaut)")
+        else:
+            select_region_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "selectRegion"))
+            )
+            select_object = Select(select_region_element)
+            select_object.select_by_visible_text(region_text)
+            print(f"- Région sélectionnée : '{region_text}'")
 
-        bouton_rechercher = driver.find_element(By.ID, "submit-search-form")
+        # 3. Bouton Rechercher (type='submit' dans le formulaire)
+        bouton_rechercher = driver.find_element(By.CSS_SELECTOR, "form button[type='submit']")
         bouton_rechercher.click()
         print("✅ Recherche lancée !")
         return True
     except Exception as e:
         print(f"❌ Erreur lors de la recherche : {e}")
+        # Sauvegarde du HTML pour analyse si ça échoue encore
+        with open("iquesta_debug.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        return False
+
+def filtrer_par_contrat(driver, contract_type_text):
+    """Sélectionne le type de contrat et relance la recherche."""
+    print(f"\n📄 Filtrage par type de contrat : '{contract_type_text}'...")
+    try:
+        # Utiliser l'ID 'selectContract' fourni par l'utilisateur
+        select_contract_element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "selectContract"))
+        )
+        select_object = Select(select_contract_element)
+        select_object.select_by_visible_text(contract_type_text)
+        print(f"✅ Contrat '{contract_type_text}' sélectionné.")
+
+        # Le formulaire a l'ID 'offerFormSearch', on clique sur le bouton submit dedans
+        form = driver.find_element(By.ID, "offerFormSearch")
+        bouton_rechercher = form.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        bouton_rechercher.click()
+        print("✅ Filtres appliqués.")
+        # Attendre que la page se recharge avec les résultats filtrés
+        WebDriverWait(driver, 10).until(EC.staleness_of(bouton_rechercher))
+        return True
+    except Exception as e:
+        print(f"❌ Erreur lors du filtrage par contrat : {e}")
         return False
 
 def cliquer_premiere_offre(driver):
     """Clique sur la première offre dans les résultats."""
-    print("\n📄 Analyse de la page de résultats...")
+    print("\n📄 Analyse de la page de résultats après filtrage...")
     try:
-        offre_selector = "a.job-title.stretched-link"
-        premiere_offre = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, offre_selector))
+        # Nouveau sélecteur basé sur l'analyse du fichier iquesta_results_debug.html.
+        # Les liens des offres semblent avoir la classe 'fw-bold' après filtrage.
+        premier_lien = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "a.fw-bold"))
         )
         print("✅ Première offre trouvée. Clic en cours...")
-        driver.execute_script("arguments[0].click();", premiere_offre)
+        driver.execute_script("arguments[0].click();", premier_lien)
         return True
     except Exception as e:
-        print(f"❌ Erreur lors du clic sur la première offre : {e}")
+        print(f"❌ Erreur lors du clic sur la première offre. Le sélecteur 'a.fw-bold' est probablement obsolète ou non unique.")
+        print("💾 Sauvegarde du HTML de la page de résultats dans 'iquesta_results_debug.html' pour analyse...")
+        with open("iquesta_results_debug.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        print("💡 Ouvrez ce fichier et cherchez le lien de la première offre pour trouver le bon sélecteur CSS.")
         return False
 
-def remplir_formulaire_candidature(driver, user_email, first_name, last_name, cv_path, lm_path):
-    """Remplit le formulaire de candidature dans le nouvel onglet."""
+def remplir_formulaire_candidature(driver, user_data):
+    """Remplit le formulaire de candidature."""
     print("\n📝 Remplissage du formulaire de candidature...")
     try:
-        WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
-        driver.switch_to.window(driver.window_handles[1])
-        print("- Basculement vers l'onglet de l'offre.")
+        # La page de l'offre se charge dans le même onglet, il n'est donc pas nécessaire de basculer.
+        print("- Page du formulaire de candidature atteinte.")
 
-        wait = WebDriverWait(driver, 20)
-        
-        email_input = wait.until(EC.presence_of_element_located((By.ID, "email")))
-        email_input.send_keys(user_email)
+        # Remplir les champs du formulaire en utilisant les sélecteurs trouvés
+        print("- Remplissage de l'e-mail...")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "application-email"))
+        ).send_keys(user_data['email'])
 
-        name_input = driver.find_element(By.ID, "name")
-        name_input.send_keys(f"{first_name} {last_name}")
-        
-        message_input = driver.find_element(By.ID, "message")
-        message_input.send_keys(f"Bonjour,\n\nCandidature de la part de {first_name} {last_name}.\n\nCordialement.")
-        print("- Champs texte remplis.")
+        print("- Remplissage du prénom...")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.NAME, "firstName"))
+        ).send_keys(user_data['first_name'])
 
-        if not cv_path or not os.path.exists(cv_path):
-            print(f"❌ ERREUR: Fichier CV non trouvé : {cv_path}")
-            return False
-        cv_input = driver.find_element(By.ID, "cv")
-        cv_input.send_keys(os.path.abspath(cv_path))
-        print(f"- CV uploadé : {cv_path}")
+        print("- Remplissage du nom...")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.NAME, "lastName"))
+        ).send_keys(user_data['last_name'])
 
-        if lm_path and os.path.exists(lm_path):
-            lm_input = driver.find_element(By.ID, "lm")
-            lm_input.send_keys(os.path.abspath(lm_path))
-            print(f"- Lettre de motivation uploadée : {lm_path}")
-        else:
-            print("- Pas de lettre de motivation fournie.")
+        print("- Remplissage du message (optionnel)...")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.NAME, "message"))
+        ).send_keys("Candidature via un script automatisé de test.")
 
-        print("\n✅ Formulaire rempli.")
-        print("\nℹ️ La candidature n'a PAS été envoyée. Pour l'activer, décommentez le code de soumission.")
+        # Uploader le CV et la lettre de motivation
+        cv_path = user_data.get('cv_path')
+        lm_path = user_data.get('lm_path')
+
+        if cv_path:
+            absolute_cv_path = os.path.abspath(cv_path)
+            print(f"- Téléchargement du CV depuis : {absolute_cv_path}")
+            if os.path.exists(absolute_cv_path):
+                driver.find_element(By.NAME, "cv").send_keys(absolute_cv_path)
+            else:
+                print(f"❌ ERREUR : Fichier CV non trouvé à l'emplacement : {absolute_cv_path}")
+                return False
+
+        if lm_path:
+            absolute_lm_path = os.path.abspath(lm_path)
+            print(f"- Téléchargement de la lettre de motivation depuis : {absolute_lm_path}")
+            if os.path.exists(absolute_lm_path):
+                driver.find_element(By.NAME, "lm").send_keys(absolute_lm_path)
+            else:
+                print(f"- AVERTISSEMENT : Fichier LM non trouvé à l'emplacement : {absolute_lm_path}")
+
+        # La soumission est maintenant activée.
+        print("\n- Clic sur le bouton 'Postuler'...")
+        submit_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "input[type='submit'][value='Postuler']"))
+        )
+        submit_button.click()
+
+        print("\n✅ Candidature soumise avec succès !")
         return True
 
     except Exception as e:
-        print(f"❌ Erreur lors du remplissage du formulaire : {e}")
+        print(f"❌ Erreur lors du remplissage du formulaire. Les sélecteurs sont probablement incorrects.")
+        print(f"   Message d'erreur Selenium : {e}")
+        print("💾 Sauvegarde du HTML de la page de candidature dans 'iquesta_application_debug.html' pour analyse...")
+        with open("iquesta_application_debug.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        print("💡 Ouvrez ce fichier et inspectez le formulaire pour trouver les bons sélecteurs (ID, name, class, etc.).")
+        print("❌ Échec de la soumission de la candidature.")
         return False
 
 def main():
     """Fonction principale pour orchestrer le scraping."""
-    db = UserDatabase()
-    try:
-        print(f"🔍 Recherche de l'utilisateur : {USER_EMAIL}")
-        user_data = db.get_user_by_email(USER_EMAIL)
-        
-        if not user_data:
-            print(f"❌ ERREUR: Aucun utilisateur trouvé avec l'email {USER_EMAIL}.")
-            return
+    load_dotenv()
+    USER_EMAIL = os.getenv("USER_EMAIL")
+    PAUSE_DURATION = 10
 
-        first_name = user_data.get('first_name')
-        last_name = user_data.get('last_name')
-        cv_path = user_data.get('cv_path')
-        lm_path = user_data.get('lm_path')
-
-        if not all([first_name, last_name, cv_path]):
-            print(f"❌ ERREUR: Données manquantes pour {USER_EMAIL}. Prénom, nom et CV sont requis.")
-            return
-        
-        print(f"✅ Utilisateur trouvé : {first_name} {last_name}")
-    finally:
-        db.close()
-
-    driver = initialiser_driver()
-    if not driver:
+    if not USER_EMAIL:
+        print("❌ La variable d'environnement USER_EMAIL n'est pas définie.")
         return
 
     try:
-        driver.get(URL_ACCUEIL)
+        driver = initialiser_driver()
+        db = UserDatabase()
+        user_data = db.get_user_by_email(USER_EMAIL)
+        db.close()
+
+        if not user_data:
+            return
+
+        first_name = user_data['first_name']
+        last_name = user_data['last_name']
+        cv_path = user_data.get('cv_path')
+        lm_path = user_data.get('lm_path')
+
+        if not all([cv_path, lm_path]):
+            print("❌ CV ou lettre de motivation manquant pour l'utilisateur.")
+            return
+
+        driver.get("https://www.iquesta.com/")
         gerer_cookies(driver)
         
+        # Étape 1: Recherche initiale
         if rechercher_offres(driver, "stage informatique", "Toute la France"):
-            if cliquer_premiere_offre(driver):
-                if remplir_formulaire_candidature(driver, USER_EMAIL, first_name, last_name, cv_path, lm_path):
-                    print("\n🎉 Processus de candidature terminé !")
+            # Étape 2: Filtrer par type de contrat sur la page de résultats
+            if filtrer_par_contrat(driver, "Stage"):
+                # Étape 3: Cliquer sur la première offre après filtrage
+                if cliquer_premiere_offre(driver):
+                    # Étape 4: Remplir le formulaire de candidature
+                    if remplir_formulaire_candidature(driver, user_data):
+                        print("\n🎉 Processus de candidature terminé !")
+                    else:
+                        print("❌ Échec de la soumission de la candidature.")
                 else:
-                    print("\n❌ Échec du remplissage du formulaire.")
+                    print("❌ Échec du clic sur l'offre après filtrage.")
             else:
-                print("\n❌ Échec du clic sur l'offre.")
+                print("❌ Échec du filtrage par contrat.")
         else:
-            print("\n❌ Échec de la recherche.")
+            print("❌ Échec de la recherche initiale.")
 
-        print("\n👀 Le navigateur restera ouvert 10 secondes.")
-        time.sleep(10)
-
-    except Exception as e:
-        print(f"❌ Une erreur majeure est survenue : {e}")
     finally:
-        if driver:
+        if 'driver' in locals() and driver:
+            print(f"\n👀 Le navigateur restera ouvert {PAUSE_DURATION} secondes.")
+            time.sleep(PAUSE_DURATION)
             print("🚪 Fermeture du navigateur.")
             driver.quit()
 
