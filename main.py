@@ -58,12 +58,18 @@ class UserRegistration(BaseModel):
     password: str
     first_name: str
     last_name: str
+    search_query: Optional[str] = None
+    contract_type: Optional[str] = None
+    location: Optional[str] = None
 
 class UserInDB(BaseModel):
     id: int
     email: EmailStr
     first_name: str
     last_name: str
+    search_query: Optional[str] = None
+    contract_type: Optional[str] = None
+    location: Optional[str] = None
     cv_path: Optional[str] = None
     lm_path: Optional[str] = None
 
@@ -120,7 +126,10 @@ def register_user(user_data: UserRegistration, db: UserDatabase = Depends(get_db
         user_info = {
             "email": user_data.email,
             "first_name": user_data.first_name,
-            "last_name": user_data.last_name
+            "last_name": user_data.last_name,
+            "search_query": user_data.search_query,
+            "contract_type": user_data.contract_type,
+            "location": user_data.location
         }
         created_user = db.create_user(user_info, hashed_password)
         

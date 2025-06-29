@@ -239,17 +239,38 @@ def main():
         driver.get("https://www.iquesta.com/")
         gerer_cookies(driver)
         
-        # Étape 1: Recherche initiale
-        if rechercher_offres(driver, "stage informatique", "Toute la France"):
-            # Étape 2: Filtrer par type de contrat sur la page de résultats
-            if filtrer_par_contrat(driver, "Stage"):
-                # Étape 3: Cliquer sur la première offre après filtrage
+        # Récupérer les préférences de recherche de l'utilisateur
+        search_query = user_data.get('search_query')
+        location = user_data.get('location')
+        contract_type = user_data.get('contract_type')
+
+        # Utiliser des valeurs par défaut si non spécifiées et informer l'utilisateur
+        if not search_query:
+            search_query = "stage informatique" # Valeur par défaut
+            print(f"INFO: Pas de poste recherché spécifié, utilisation de la valeur par défaut : '{search_query}'")
+        if not location:
+            location = "Toute la France" # Valeur par défaut
+            print(f"INFO: Pas de localisation spécifiée, utilisation de la valeur par défaut : '{location}'")
+
+        # Lancer la recherche avec les paramètres de l'utilisateur
+        if rechercher_offres(driver, metier=search_query, region=location):
+            # Filtrer par type de contrat uniquement s'il est spécifié
+            should_proceed = False
+            if contract_type:
+                if filtrer_par_contrat(driver, contract_type):
+                    should_proceed = True
+            else:
+                print("INFO: Pas de type de contrat spécifié, le filtre ne sera pas appliqué.")
+                should_proceed = True # Continuer sans filtrer
+
+            if should_proceed:
+                # Cliquer sur la première offre
                 if cliquer_premiere_offre(driver):
-                    # Étape 4: Remplir le formulaire de candidature
+                    # Remplir le formulaire
                     if remplir_formulaire_candidature(driver, user_data):
                         print("\n🎉 Processus de candidature terminé !")
                     else:
-                        print("❌ Échec de la soumission de la candidature.")
+                        print("\n❌ Échec de la soumission de la candidature.")
                 else:
                     print("❌ Échec du clic sur l'offre après filtrage.")
             else:

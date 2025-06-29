@@ -88,6 +88,9 @@ class UserDatabase:
             hashed_password VARCHAR(255) NOT NULL,
             first_name VARCHAR(100) NOT NULL,
             last_name VARCHAR(100) NOT NULL,
+            search_query VARCHAR(255),
+            contract_type VARCHAR(100),
+            location VARCHAR(255),
             cv_path VARCHAR(255),
             lm_path VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -98,10 +101,11 @@ class UserDatabase:
         
         # S'assurer que les colonnes pour les documents existent (migration simple)
         logger.info("Vérification des colonnes 'cv_path' et 'lm_path'...")
-        alter_cv_query = "ALTER TABLE users ADD COLUMN IF NOT EXISTS cv_path VARCHAR(255);"
-        alter_lm_query = "ALTER TABLE users ADD COLUMN IF NOT EXISTS lm_path VARCHAR(255);"
-        self._execute_query(alter_cv_query)
-        self._execute_query(alter_lm_query)
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS cv_path VARCHAR(255);")
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS lm_path VARCHAR(255);")
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS search_query VARCHAR(255);")
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS contract_type VARCHAR(100);")
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);")
         
         logger.info("✅ Table 'users' prête et à jour.")
 
@@ -113,15 +117,18 @@ class UserDatabase:
     def create_user(self, user_data: dict, hashed_password: str):
         """Crée un nouvel utilisateur."""
         query = """
-        INSERT INTO users (email, hashed_password, first_name, last_name)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO users (email, hashed_password, first_name, last_name, search_query, contract_type, location)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING *;
         """
         params = (
             user_data['email'],
             hashed_password,
             user_data['first_name'],
-            user_data['last_name']
+            user_data['last_name'],
+            user_data.get('search_query'),
+            user_data.get('contract_type'),
+            user_data.get('location')
         )
         return self._execute_query(query, params, fetch='one')
 

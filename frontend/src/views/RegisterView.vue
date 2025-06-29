@@ -18,6 +18,31 @@
         <label for="password">Mot de passe:</label>
         <input type="password" id="password" v-model="form.password" required>
       </div>
+
+      <hr>
+      <p>Vos préférences de recherche :</p>
+
+      <div class="form-group">
+        <label for="search_query">Poste recherché:</label>
+        <input type="text" id="search_query" v-model="form.search_query" placeholder="Ex: Développeur Python">
+      </div>
+
+      <div class="form-group">
+        <label for="contract_type">Type de contrat:</label>
+        <select id="contract_type" v-model="form.contract_type">
+          <option value="">Indifférent</option>
+          <option value="CDI">CDI</option>
+          <option value="CDD">CDD</option>
+          <option value="Stage">Stage</option>
+          <option value="Alternance">Alternance</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="location">Localisation:</label>
+        <input type="text" id="location" v-model="form.location" placeholder="Ex: Lyon, France">
+      </div>
+
       <button type="submit">S'inscrire</button>
     </form>
     <p v-if="message" class="message">{{ message }}</p>
@@ -34,7 +59,10 @@ export default {
         email: '',
         password: '',
         first_name: '',
-        last_name: ''
+        last_name: '',
+        search_query: '',
+        contract_type: '',
+        location: ''
       },
       message: ''
     };
