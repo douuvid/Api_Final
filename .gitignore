@@ -19,3 +19,6 @@ reports/
 # Base de données locale
 app.db*
 
+# Fichiers utilisateurs (CV et lettres de motivation)
+upload_cv_lm_utilisateur/
+
