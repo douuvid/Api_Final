@@ -13,3 +13,4 @@ undetected-chromedriver
 pydantic[email]
 python-jose[pycryptodome]
 passlib[bcrypt]
+beautifulsoup4==4.12.3
