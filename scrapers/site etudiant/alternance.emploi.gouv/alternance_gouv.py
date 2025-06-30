@@ -30,6 +30,146 @@ logger = logging.getLogger(__name__)
 
 # --- Fonctions robustes de bas niveau (inspirées du code utilisateur) ---
 
+def uncheck_formations_checkbox(driver, wait):
+    """Décoche la case 'Formations' si elle est cochée."""
+    try:
+        logger.info("Tentative de décocher la case 'Formations'...")
+        
+        # Basé sur l'HTML fourni, cibler directement par attribut name='formations'
+        try:
+            # Tenter de trouver par attribut name qui est le plus fiable
+            checkbox = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='formations'][type='checkbox']")))
+            
+            # Vérifier si la case est cochée
+            if checkbox.is_selected() or checkbox.get_attribute('checked') == 'true':
+                logger.info("Case 'Formations' trouvée et elle est cochée")
+                
+                # Tentative 1: Clic direct
+                try:
+                    # Tenter un clic normal d'abord
+                    checkbox.click()
+                    logger.info("✅ Case 'Formations' décochée avec succès via clic direct")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Échec du clic direct sur la case: {e}")
+                
+                # Tentative 2: Clic JavaScript
+                try:
+                    driver.execute_script("arguments[0].checked = false;", checkbox)
+                    driver.execute_script("arguments[0].dispatchEvent(new Event('change', { 'bubbles': true }));", checkbox)
+                    logger.info("✅ Case 'Formations' décochée avec succès via JavaScript")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Échec du clic JavaScript sur la case: {e}")
+                
+                # Tentative 3: ActionChains
+                try:
+                    ActionChains(driver).move_to_element(checkbox).click().perform()
+                    logger.info("✅ Case 'Formations' décochée avec succès via ActionChains")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Échec du clic via ActionChains sur la case: {e}")
+            else:
+                logger.info("La case 'Formations' a été trouvée mais elle n'est pas cochée")
+                return True
+                
+        except Exception as e:
+            logger.warning(f"Impossible de trouver la case 'Formations' par nom: {e}")
+            
+        # Tenter de trouver par data-attribute
+        try:
+            checkbox = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[data-fr-js-checkbox-input='true']")))
+            parent_text = driver.execute_script("return arguments[0].parentElement.textContent;", checkbox)
+            
+            if 'formations' in parent_text.lower() and (checkbox.is_selected() or checkbox.get_attribute('checked') == 'true'):
+                # Utiliser JavaScript qui est plus fiable pour les cases à cocher
+                driver.execute_script("arguments[0].checked = false;", checkbox)
+                driver.execute_script("arguments[0].dispatchEvent(new Event('change', { 'bubbles': true }));", checkbox)
+                logger.info("✅ Case 'Formations' décochée avec succès via data-attribute")
+                return True
+        except Exception as e:
+            logger.warning(f"Impossible de trouver la case par data-attribute: {e}")
+            
+        # Cibler par texte du label adjacent
+        try:
+            # Trouver tous les labels qui contiennent 'Formations'
+            formations_labels = driver.find_elements(By.XPATH, "//label[contains(text(), 'Formations')]")
+            
+            for label in formations_labels:
+                # Trouver le checkbox associé par son ID
+                label_for = label.get_attribute('for')
+                if label_for:
+                    try:
+                        checkbox = driver.find_element(By.ID, label_for)
+                        if checkbox.is_selected() or checkbox.get_attribute('checked') == 'true':
+                            driver.execute_script("arguments[0].checked = false;", checkbox)
+                            logger.info("✅ Case 'Formations' décochée avec succès via label")
+                            return True
+                    except Exception as inner_e:
+                        continue
+        except Exception as e:
+            logger.warning(f"Impossible de trouver la case par texte du label: {e}")
+        
+        # Essayer chaque sélecteur jusqu'à trouver le checkbox
+        checkbox = None
+        for selector in checkbox_selectors:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                # Filtrer pour ne garder que les éléments visibles et cochés
+                visible_checkboxes = [el for el in elements if el.is_displayed() and el.get_attribute('checked') == 'true']
+                if visible_checkboxes:
+                    checkbox = visible_checkboxes[0]
+                    logger.info(f"Case 'Formations' trouvée avec le sélecteur: {selector}")
+                    break
+            except Exception as e:
+                continue
+        
+        # Si on n'a pas trouvé avec CSS, essayer avec XPath pour le texte du label
+        if not checkbox:
+            try:
+                # XPath pour trouver un checkbox avec un label contenant 'Formations'
+                xpath = "//label[contains(text(), 'Formations')]/preceding-sibling::input[@type='checkbox'] | //label[contains(text(), 'Formations')]/../input[@type='checkbox']"
+                elements = driver.find_elements(By.XPATH, xpath)
+                visible_checkboxes = [el for el in elements if el.is_displayed() and el.get_attribute('checked') == 'true']
+                if visible_checkboxes:
+                    checkbox = visible_checkboxes[0]
+                    logger.info("Case 'Formations' trouvée avec XPath")
+            except Exception as e:
+                logger.warning(f"Erreur lors de la recherche par XPath: {e}")
+        
+        # Si on a trouvé le checkbox et qu'il est coché
+        if checkbox and checkbox.is_selected():
+            try:
+                # Essayer de cliquer directement
+                checkbox.click()
+                logger.info("✅ Case 'Formations' décochée avec succès")
+            except Exception as e:
+                logger.warning(f"Erreur lors du clic direct: {e}")
+                # Essayer avec JavaScript si le clic direct ne fonctionne pas
+                try:
+                    driver.execute_script("arguments[0].click();", checkbox)
+                    logger.info("✅ Case 'Formations' décochée via JavaScript")
+                except Exception as e2:
+                    logger.warning(f"Échec du clic via JavaScript: {e2}")
+                    # Dernière tentative avec Actions
+                    try:
+                        ActionChains(driver).move_to_element(checkbox).click().perform()
+                        logger.info("✅ Case 'Formations' décochée via ActionChains")
+                    except Exception as e3:
+                        logger.error(f"❌ Impossible de décocher la case 'Formations': {e3}")
+        elif checkbox:
+            logger.info("La case 'Formations' est déjà décochée")
+        else:
+            logger.warning("❓ Case 'Formations' non trouvée")
+            # Capture d'écran pour analyser le problème
+            screenshot_path = "debug_screenshots/checkbox_not_found.png"
+            os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+            driver.save_screenshot(screenshot_path)
+            logger.info(f"Capture d'écran enregistrée dans {screenshot_path}")
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la tentative de décocher la case 'Formations': {e}")
+
 def setup_driver():
     """Configure un driver Chrome robuste sans ouverture automatique des DevTools."""
     options = webdriver.ChromeOptions()
@@ -746,6 +886,9 @@ def run_scraper(user_data):
         # Pause avant de commencer le remplissage
         time.sleep(2)
         
+        # Décocher la case "Formations" si elle est cochée
+        uncheck_formations_checkbox(driver, wait)
+        
         # Étape 3: Remplissage des champs avec notre fonction améliorée
         logger.info("Début du remplissage des champs du formulaire...")
         
@@ -1237,18 +1380,22 @@ def run_scraper(user_data):
                         elif any(term in card_text for term in ["entreprise", "emploi", "offre", "recrute", "job", "cdd", "cdi", "alternance"]):
                             offer_type = "Entreprise"
                         
-                        # Créer un dictionnaire avec les informations de l'offre
-                        job_offer = {
-                            "title": title,
-                            "company": company,
-                            "location": location,
-                            "link": link,
-                            "type": offer_type,
-                            "source": "La bonne alternance"
-                        }
-                        
-                        job_offers.append(job_offer)
-                        logger.info(f"Offre {index+1} ajoutée: {title} chez {company} à {location} ({offer_type})")
+                        # Vérifier si l'offre est une offre d'entreprise et non une formation
+                        if offer_type.lower() != "formation":
+                            # Créer un dictionnaire avec les informations de l'offre
+                            job_offer = {
+                                "title": title,
+                                "company": company,
+                                "location": location,
+                                "link": link,
+                                "type": offer_type,
+                                "source": "La bonne alternance"
+                            }
+                            
+                            job_offers.append(job_offer)
+                            logger.info(f"Offre {index+1} ajoutée: {title} chez {company} à {location} ({offer_type})")
+                        else:
+                            logger.info(f"Formation ignorée: {title} chez {company} à {location}")
                     except Exception as e:
                         logger.error(f"Erreur lors de l'extraction des données de la carte {index}: {e}", exc_info=True)
                 
