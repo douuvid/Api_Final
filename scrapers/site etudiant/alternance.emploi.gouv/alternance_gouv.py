@@ -1,9 +1,55 @@
 import logging
-import sys
+import json
 import os
 import time
+import re
+import sys
+import traceback
+import datetime
+import unicodedata
+import base64
 import random
-from datetime import datetime
+from urllib.parse import urlparse, unquote, parse_qs
+
+# Configuration pour la postulation automatique
+AUTO_POSTULER = True  # Activer/désactiver la postulation automatique
+PAUSE_APRES_POSTULATION = False  # Mettre en pause après ouverture du formulaire pour inspection manuelle
+
+# Import des fonctions auxiliaires
+try:
+    from postuler_functions import remplir_formulaire_candidature, postuler_offre, AUTO_REMPLIR_FORMULAIRE, AUTO_ENVOYER_CANDIDATURE
+    POSTULER_FUNCTIONS_LOADED = True
+except ImportError:
+    logger.warning("Module postuler_functions non trouvé, la postulation automatisée ne sera pas disponible")
+    POSTULER_FUNCTIONS_LOADED = False
+
+try:
+    from capture_functions import capture_and_highlight, switch_to_iframe_if_needed
+    CAPTURE_FUNCTIONS_LOADED = True
+except ImportError:
+    logger.warning("Module capture_functions non trouvé, les fonctions de capture améliorées ne seront pas disponibles")
+    CAPTURE_FUNCTIONS_LOADED = False
+    
+    # Fonction de remplacement simple si le module n'est pas disponible
+    def capture_and_highlight(driver, element, description=""):
+        try:
+            if not os.path.exists('debug_screenshots'):
+                os.makedirs('debug_screenshots')
+            filename = f"debug_screenshots/{description.replace(' ', '_')}.png"
+            driver.save_screenshot(filename)
+            return filename
+        except Exception as e:
+            logger.error(f"Erreur lors de la capture: {e}")
+            return None
+            
+    def switch_to_iframe_if_needed(driver):
+        try:
+            driver.switch_to.default_content()
+            iframe = driver.find_element(By.CSS_SELECTOR, "iframe")
+            driver.switch_to.frame(iframe)
+            return True
+        except Exception:
+            return False
 
 # Ajout du chemin racine du projet pour permettre les imports
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -28,50 +74,204 @@ from database.user_database import UserDatabase
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# --- Fonctions auxiliaires ---
+
+def capture_and_highlight(driver, element, description):
+    """Capture un screenshot avec mise en évidence d'un élément"""
+    try:
+        filename = f"debug_screenshots/{description.replace(' ', '_')}.png"
+        # Mise en évidence de l'élément
+        driver.execute_script(
+            "arguments[0].style.border='3px solid red'; arguments[0].style.boxShadow='0 0 10px red';", 
+            element
+        )
+        time.sleep(0.5)  # Petite pause pour l'animation
+        driver.save_screenshot(filename)
+        logger.info(f"Capture d'écran de {description} enregistrée dans {filename}")
+    except Exception as e:
+        logger.warning(f"Impossible de capturer l'écran pour {description}: {e}")
+
+
+def switch_to_iframe_if_needed(driver):
+    """Bascule vers l'iframe de résultats si nécessaire"""
+    try:
+        # Vérifier si nous sommes déjà dans l'iframe
+        try:
+            # Si cet élément est accessible, nous ne sommes pas dans l'iframe
+            driver.find_element(By.TAG_NAME, 'iframe')
+            is_in_iframe = False
+        except:
+            # Si l'élément n'est pas trouvé, nous sommes peut-être déjà dans l'iframe
+            is_in_iframe = True
+        
+        if not is_in_iframe:
+            # Essayer de trouver l'iframe et y basculer
+            iframe_selectors = [
+                "iframe#labnframe",
+                "iframe#laBonneAlternance", 
+                "iframe.labonne",
+                "iframe[title*='La Bonne Alternance']", 
+                "iframe"
+            ]
+            
+            for selector in iframe_selectors:
+                try:
+                    iframe = driver.find_element(By.CSS_SELECTOR, selector)
+                    if iframe.is_displayed():
+                        driver.switch_to.frame(iframe)
+                        logger.info(f"Basculé vers l'iframe avec le sélecteur: {selector}")
+                        return True
+                except Exception as e:
+                    continue
+            
+            logger.warning("Impossible de trouver l'iframe des résultats")
+            return False
+        else:
+            logger.info("Déjà dans l'iframe")
+            return True
+    except Exception as e:
+        logger.error(f"Erreur lors de la tentative de basculer vers l'iframe: {e}")
+        return False
+
 # --- Fonctions robustes de bas niveau (inspirées du code utilisateur) ---
 
 def uncheck_formations_checkbox(driver, wait):
-    """Décoche la case 'Formations' si elle est cochée."""
+    """Décoche la case 'Formations' si elle est cochée avec plusieurs méthodes pour assurer la compatibilité React."""
     try:
         logger.info("Tentative de décocher la case 'Formations'...")
         
-        # Basé sur l'HTML fourni, cibler directement par attribut name='formations'
+        # Capture d'écran avant décochage pour déboguer
+        driver.save_screenshot('debug_screenshots/avant_decochage_formations.png')
+        
+        # Recherche agressive de la case Formations par plusieurs méthodes
+        formations_checkbox_found = False
+        checkbox = None
+        
+        # Méthode 1: Cibler directement par attribut name='formations'
         try:
-            # Tenter de trouver par attribut name qui est le plus fiable
-            checkbox = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='formations'][type='checkbox']")))
+            checkbox_selectors = [
+                "input[name='formations'][type='checkbox']",
+                "input#formations",
+                "input[type='checkbox'][name*='formation']",
+                "input[type='checkbox'][id*='formation']",
+                "input[name*='formation']",
+                "input[aria-label*='formation' i][type='checkbox']",  # 'i' pour insensible à la casse
+                "input[type='checkbox']"
+            ]
             
-            # Vérifier si la case est cochée
-            if checkbox.is_selected() or checkbox.get_attribute('checked') == 'true':
-                logger.info("Case 'Formations' trouvée et elle est cochée")
-                
-                # Tentative 1: Clic direct
+            for selector in checkbox_selectors:
                 try:
-                    # Tenter un clic normal d'abord
-                    checkbox.click()
-                    logger.info("✅ Case 'Formations' décochée avec succès via clic direct")
-                    return True
-                except Exception as e:
-                    logger.warning(f"Échec du clic direct sur la case: {e}")
+                    checkboxes = driver.find_elements(By.CSS_SELECTOR, selector)
+                    if checkboxes:
+                        for cb in checkboxes:
+                            try:
+                                # Vérifier si c'est la case formations en vérifiant les attributs ou le texte autour
+                                parent = driver.execute_script("return arguments[0].parentNode;", cb)
+                                parent_text = parent.text.lower() if parent else ""
+                                
+                                if (cb.get_attribute('name') == 'formations' or 
+                                    'formation' in (cb.get_attribute('id') or '') or 
+                                    'formation' in parent_text):
+                                    checkbox = cb
+                                    formations_checkbox_found = True
+                                    logger.info(f"Case 'Formations' trouvée avec le sélecteur: {selector}")
+                                    break
+                            except Exception:
+                                continue
+                        if formations_checkbox_found:
+                            break
+                except Exception:
+                    continue
+            
+            # Si toujours pas trouvée, essayer par XPath
+            if not checkbox:
+                xpath_selectors = [
+                    "//input[@type='checkbox' and contains(@name, 'formation')]",
+                    "//input[@type='checkbox' and contains(@id, 'formation')]",
+                    "//label[contains(translate(text(), 'FORMATIONS', 'formations'), 'formation')]/input[@type='checkbox']",
+                    "//label[contains(translate(text(), 'FORMATIONS', 'formations'), 'formation')]/following::input[@type='checkbox'][1]",
+                    "//input[@type='checkbox']/following::*[contains(translate(text(), 'FORMATIONS', 'formations'), 'formation')]"
+                ]
                 
-                # Tentative 2: Clic JavaScript
-                try:
-                    driver.execute_script("arguments[0].checked = false;", checkbox)
-                    driver.execute_script("arguments[0].dispatchEvent(new Event('change', { 'bubbles': true }));", checkbox)
-                    logger.info("✅ Case 'Formations' décochée avec succès via JavaScript")
+                for xpath in xpath_selectors:
+                    try:
+                        elements = driver.find_elements(By.XPATH, xpath)
+                        if elements:
+                            checkbox = elements[0]
+                            formations_checkbox_found = True
+                            logger.info(f"Case 'Formations' trouvée avec le XPath: {xpath}")
+                            break
+                    except Exception:
+                        continue
+            
+            # Vérification initiale et multiples tentatives de décocher pour React
+            if checkbox:
+                for attempt in range(3):  # Faire plusieurs tentatives
+                    time.sleep(1)  # Pause entre les tentatives
+                    
+                    # Vérifier si la case est cochée ou si on force le décochage
+                    force_uncheck = True  # Toujours forcer le décochage pour s'éviter des problèmes
+                    is_checked = checkbox.is_selected() or checkbox.get_attribute('checked') == 'true'
+                    
+                    if is_checked or force_uncheck:
+                        logger.info(f"Case 'Formations' trouvée et {'elle est cochée' if is_checked else 'forçage du décochage'} - tentative {attempt+1}")
+
+                    
+                    # Méthode 1: JavaScript complet pour React (la plus efficace)
+                    try:
+                        # Cette méthode simule tous les événements React nécessaires
+                        js_code = """
+                        arguments[0].checked = false;
+                        arguments[0].setAttribute('checked', false);
+                        var event = new Event('change', { 'bubbles': true, 'cancelable': true });
+                        arguments[0].dispatchEvent(event);
+                        // Pour React, simuler aussi un click en plus du change
+                        var clickEvent = new MouseEvent('click', {
+                            'bubbles': true,
+                            'cancelable': true,
+                            'view': window
+                        });
+                        arguments[0].dispatchEvent(clickEvent);
+                        // Forcer la mise à jour de l'interface React
+                        if (arguments[0]._valueTracker) {
+                            arguments[0]._valueTracker.setValue(false);
+                        }
+                        """
+                        driver.execute_script(js_code, checkbox)
+                        time.sleep(0.5)  # Attendre la propagation des événements
+                        logger.info("✅ Case 'Formations' décochée via JavaScript complet pour React")
+                        
+                        # Vérifier si ça a fonctionné après la modification
+                        if not checkbox.is_selected() and checkbox.get_attribute('checked') != 'true':
+                            logger.info("✓ Vérification: la case est bien décochée")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Échec du JS complet pour React: {e}")
+                    
+                    # Méthode 2: Clic direct (si JS a échoué)
+                    try:
+                        checkbox.click()
+                        time.sleep(0.5)
+                        if not checkbox.is_selected() and checkbox.get_attribute('checked') != 'true':
+                            logger.info("✅ Case 'Formations' décochée via clic direct")
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Échec du clic direct: {e}")
+                    
+                    # Méthode 3: ActionChains (si les autres ont échoué)
+                    try:
+                        ActionChains(driver).move_to_element(checkbox).click().perform()
+                        time.sleep(0.5)
+                        logger.info("✅ Case 'Formations' décochée via ActionChains")
+                        
+                        # Double vérification après ActionChains
+                        if not checkbox.is_selected() and checkbox.get_attribute('checked') != 'true':
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Échec du ActionChains: {e}")
+                else:
+                    logger.info("La case 'Formations' est déjà décochée")
                     return True
-                except Exception as e:
-                    logger.warning(f"Échec du clic JavaScript sur la case: {e}")
-                
-                # Tentative 3: ActionChains
-                try:
-                    ActionChains(driver).move_to_element(checkbox).click().perform()
-                    logger.info("✅ Case 'Formations' décochée avec succès via ActionChains")
-                    return True
-                except Exception as e:
-                    logger.warning(f"Échec du clic via ActionChains sur la case: {e}")
-            else:
-                logger.info("La case 'Formations' a été trouvée mais elle n'est pas cochée")
-                return True
                 
         except Exception as e:
             logger.warning(f"Impossible de trouver la case 'Formations' par nom: {e}")
@@ -471,6 +671,511 @@ def fill_field_with_autocomplete(driver, wait, field_id, value, max_retries=3):
     logger.error(f"❌ Échec du remplissage du champ '{field_id}' après {max_retries} tentatives")
     return False
 
+def fill_field(driver, field_id, value, wait):
+    """Remplit un champ avec une valeur donnée avec plusieurs méthodes en cas d'échec."""
+    logger.info(f"🎡 Remplissage du champ '{field_id}' avec '{value}'")
+    max_attempts = 4  # Plus de tentatives
+    success = False
+    original_value = value  # Garder la valeur d'origine
+    
+    # Capturer une image avant de commencer
+    driver.save_screenshot(f'debug_screenshots/avant_remplissage_{field_id}.png')
+    
+    # Traitement spécial pour le champ métier
+    if field_id.lower() == 'metier':
+        logger.info("\n\n==== TRAITEMENT SPÉCIAL DU CHAMP MÉTIER ====\n")
+        # Mettre l'écran en position pour voir le formulaire clairement
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(1)
+        
+        # Essayer de trouver et d'éliminer toute popup ou overlay qui pourrait interférer
+        try:
+            close_buttons = driver.find_elements(By.CSS_SELECTOR, ".fr-btn--close, .close-button, [aria-label*='fermer' i], [aria-label*='close' i]")
+            for btn in close_buttons:
+                if btn.is_displayed():
+                    logger.info("Fermeture d'une popup ou overlay détecté...")
+                    driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(0.5)
+        except Exception:
+            pass  # Ignorer les erreurs
+    
+    # Alternance des valeurs de recherche à essayer pour optimiser les chances de trouver des offres
+    metier_values = []
+    if field_id.lower() == 'metier':
+        # Liste des valeurs à essayer pour le champ métier, par ordre de priorité
+        if original_value.lower() == "commercial":
+            metier_values = [
+                "MÉTIER commercial",        # Utilise le marqueur MÉTIER explicite du site
+                "CDI commercial",           # Les CDI sont uniquement pour les emplois
+                "Offre emploi commercial",  # Très explicite pour des offres
+                "Commercial alternance entreprise", # Alternance + entreprise
+                "Commercial B to B",        # Version B2B (entreprise)
+                "Commercial"               # Valeur de base en dernier recours
+            ]
+        elif original_value.lower() == "vendeur":
+            metier_values = [
+                "MÉTIER vendeur",          # Utilise le marqueur MÉTIER explicite
+                "CDI vendeur",             # Les CDI sont uniquement pour les emplois
+                "Offre emploi vendeur",    # Très explicite pour des offres
+                "Vendeur alternance",      # Le terme alternance au lieu de formation
+                "Vendeur magasin",         # Contexte professionnel
+                "Vendeur"                  # En dernier recours
+            ]
+        else:
+            # Pour d'autres métiers - stratégie générique optimisée pour les offres d'emploi
+            metier_values = [
+                f"MÉTIER {original_value}",          # Marqueur MÉTIER explicite du site
+                f"CDI {original_value}",             # Les CDI sont uniquement pour des emplois
+                f"Offre emploi {original_value}",    # Très explicite pour des offres
+                f"{original_value} alternance entreprise", # Alternance + entreprise
+                original_value                       # Valeur originale en dernier recours
+            ]
+    else:
+        # Pour les autres champs, utiliser simplement la valeur d'origine
+        metier_values = [original_value]
+    
+    for attempt in range(1, max_attempts + 1):
+        # Changer de valeur à chaque tentative pour le champ métier
+        if field_id.lower() == 'metier' and attempt <= len(metier_values):
+            value = metier_values[attempt-1]
+            logger.info(f"\n==> Tentative {attempt}/{max_attempts} avec la valeur: '{value}'\n")
+        else:
+            logger.info(f"\n==> Tentative {attempt}/{max_attempts} pour le champ '{field_id}'\n")
+
+        logger.info(f"🔄 Tentative {attempt}/{max_attempts} pour le champ '{field_id}'")
+        try:
+            # Essayer une large gamme de sélecteurs
+            field = None
+            selectors = [
+                f"#{field_id}",                        # ID direct
+                f"input[name='{field_id}']",            # Attribut name
+                f"input[id*='{field_id}']",            # ID contenant le nom du champ
+                f"input[aria-label*='{field_id}']"     # Recherche partielle dans aria-label
+            ]
+            
+            # Ajouter des sélecteurs spécifiques pour le champ métier
+            if field_id.lower() == 'metier':
+                selectors.extend([
+                f"input[placeholder*='métier']",     # Placeholder contenant "métier"
+                f"input[placeholder*='emploi']",     # Placeholder contenant "emploi"
+                f"input[placeholder*='recherche']",   # Placeholder générique de recherche
+                f"input[aria-label*='{field_id}']"     # Recherche partielle dans aria-label
+                ])
+            
+            # Ajouter des sélecteurs plus généraux à la fin
+            selectors.extend([
+                f"input[aria-label*='{field_id}']",     # Recherche partielle dans aria-label
+                f"input[id*='{field_id}']",            # ID contenant le nom du champ
+                "input.fr-input",                      # Classe spécifique fr-input
+                "input[type='text']"                   # Tout input de type text
+            ])
+            
+            # Ajouter des sélecteurs plus génériques pour le champ métier
+            if field_id.lower() == 'metier':
+                selectors.extend([
+                    "input.react-autosuggest__input",    # React autosuggest
+                    ".fr-search-bar input",             # Barre de recherche FR
+                    "input[type='search']"              # Input de type search
+                ])
+                
+            for selector in selectors:
+                try:
+                    field_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    if field_elements:
+                        # Si plusieurs éléments sont trouvés, prendre celui qui est visible
+                        for el in field_elements:
+                            if el.is_displayed() and el.is_enabled():
+                                field = el
+                                logger.info(f"Champ trouvé avec le sélecteur: {selector}")
+                                break
+                        if field:
+                            break
+                except Exception:
+                    continue
+                    
+            # Si toujours pas trouvé, essayer avec XPath
+            if not field:
+                xpath_selectors = [
+                    f"//input[@id='{field_id}']",
+                    f"//input[@name='{field_id}']",
+                    f"//input[contains(@id, '{field_id}')]",
+                    f"//input[contains(@name, '{field_id}')]",
+                    f"//input[contains(@placeholder, '{field_id}')]",
+                    f"//input[contains(@aria-label, '{field_id}')]",
+                    "//input[@type='text']"
+                ]
+                
+                # XPath spécifique pour le champ métier
+                if field_id.lower() == 'metier':
+                    xpath_selectors.extend([
+                        "//input[contains(@placeholder, 'métier') or contains(@placeholder, 'recherche')]",
+                        "//label[contains(translate(text(), 'MÉTIER', 'métier'), 'métier')]/following::input[1]",
+                        "//input[ancestor::*[contains(@class, 'search') or contains(@id, 'search')]]"
+                    ])
+                
+                for xpath in xpath_selectors:
+                    try:
+                        elements = driver.find_elements(By.XPATH, xpath)
+                        if elements:
+                            for el in elements:
+                                if el.is_displayed() and el.is_enabled():
+                                    field = el
+                                    logger.info(f"Champ trouvé avec le XPath: {xpath}")
+                                    break
+                            if field:
+                                break
+                    except Exception:
+                        continue
+            
+            if not field:
+                logger.warning(f"Impossible de trouver le champ '{field_id}' - tentative {attempt}")
+                continue
+            
+            # MÉTHODES AGRESSIVES POUR MÉTIER
+            if field_id.lower() == 'metier':
+                logger.info("🔍 Utilisation de méthodes agressives pour le champ métier")
+                
+                # 1. Mettre en évidence visuellement le champ pour déboguer
+                driver.execute_script("arguments[0].style.border='3px solid red';", field)
+                driver.save_screenshot('debug_screenshots/metier_field_highlighted.png')
+                
+                # 2. Force focus avant tout
+                driver.execute_script("arguments[0].focus();", field)
+                time.sleep(0.5)
+                
+                # 3. Forcer l'effacement avec plusieurs méthodes
+                try:
+                    # Méthode 1: Clear standard
+                    field.clear()
+                    # Méthode 2: Sélectionner tout et supprimer
+                    field.send_keys(Keys.CONTROL + "a")
+                    field.send_keys(Keys.DELETE)
+                    # Méthode 3: JavaScript
+                    driver.execute_script("arguments[0].value = '';", field)
+                except Exception as e:
+                    logger.warning(f"Erreur lors de l'effacement du champ: {e}")
+                
+                time.sleep(0.5)
+                
+                # 4. Vérifier que le champ est bien vide
+                if field.get_attribute("value"):
+                    logger.warning("Le champ n'est pas vide après tentative d'effacement")
+                    driver.execute_script("arguments[0].value = '';", field)
+                
+                # 5. Saisie caractère par caractère LENTE
+                logger.info(f"Saisie lente de la valeur: '{value}'")
+                for char in value:
+                    # Envoyer chaque caractère avec une pause
+                    field.send_keys(char)
+                    time.sleep(0.2)  # Pause plus longue entre chaque caractère
+                    
+                    # Vérifier que le caractère a bien été saisi
+                    current_value = field.get_attribute("value")
+                    logger.info(f"  -> Valeur actuelle: '{current_value}'")
+                
+                # 6. Pause significative pour laisser apparaitre les suggestions
+                time.sleep(2)  # Pause beaucoup plus longue
+                
+                # 7. Capture d'écran pour voir si des suggestions sont apparues
+                driver.save_screenshot('debug_screenshots/apres_saisie_metier.png')
+                
+                # 8. Vérifier que la valeur est bien saisie
+                field_value = field.get_attribute("value")
+                logger.info(f"Valeur finale du champ: '{field_value}'")
+                
+                if field_value != value:
+                    # Si le champ n'a pas la valeur attendue, essayer JavaScript
+                    logger.warning(f"La valeur du champ ({field_value}) ne correspond pas à la valeur attendue ({value})")
+                    driver.execute_script(f"arguments[0].value = '{value}';", field)
+                    # Déclencher événements pour simuler une saisie réelle
+                    driver.execute_script("""
+                        var el = arguments[0];
+                        var evt = new Event('input', { bubbles: true });
+                        el.dispatchEvent(evt);
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    """, field)
+                    time.sleep(1)
+            else:
+                # Pour les autres champs, méthode standard
+                field.clear()
+                time.sleep(0.3)
+                
+                # Remplir le champ caractère par caractère avec pause
+                for char in value:
+                    field.send_keys(char)
+                    time.sleep(0.1)  # Petite pause entre chaque caractère
+                
+                time.sleep(1)  # Pause pour laisser les suggestions apparaitre
+            
+            # Traiter spécifiquement le champ 'metier' pour sélectionner une suggestion de type 'MÉTIER' et pas 'FORMATION'
+            if field_id.lower() == 'metier':
+                logger.info("\n\n==== RECHERCHE DES SUGGESTIONS DE TYPE MÉTIER ====\n")
+                
+                # Déclencher des événements supplémentaires pour s'assurer que les suggestions s'affichent
+                try:
+                    # Simuler un clic sur le champ
+                    field.click()
+                    # Simuler une pression sur la touche flèche bas pour faire apparaître les suggestions
+                    field.send_keys(Keys.ARROW_DOWN)
+                    # Simuler des événements JavaScript pour déclencher l'affichage des suggestions
+                    driver.execute_script("""
+                        var el = arguments[0];
+                        el.dispatchEvent(new Event('focus', { bubbles: true }));
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                    """, field)
+                except Exception as e:
+                    logger.warning(f"Erreur lors du déclenchement d'événements pour afficher les suggestions: {e}")
+                
+                # Pause longue pour s'assurer que les suggestions apparaissent
+                time.sleep(3)  # Attente plus longue pour les suggestions
+                
+                # Capture d'écran pour voir si des suggestions sont apparues
+                driver.save_screenshot('debug_screenshots/suggestions_metier_avant_selection.png')
+                
+                # MÉTHODE ULTRA-ROBUSTE POUR SÉLECTIONNER LES SUGGESTIONS
+                # Stratégie: Utiliser multiples approches, du plus spécifique au plus générique
+                
+                # 1. Capture d'écran de diagnostic avant toute action
+                driver.save_screenshot('debug_screenshots/avant_selection_suggestions.png')
+                logger.info("\n🔎 NOUVELLES MÉTHODES DE SÉLECTION DES SUGGESTIONS\n")
+                
+                # 2. Forcer l'apparition des suggestions avec multiples techniques
+                suggestion_found = False
+                
+                # APPROCHE 1: Simulation d'interaction utilisateur très explicite
+                try:
+                    logger.info("MÉTHODE 1: Simulation complète d'interaction utilisateur")
+                    # Effacer et remplir à nouveau le champ pour déclencher des suggestions fraîches
+                    field.clear()
+                    time.sleep(1)
+                    # Saisir caractère par caractère avec délai important
+                    for char in value:
+                        field.send_keys(char)
+                        time.sleep(0.3)
+                    
+                    # Encourager l'apparition des suggestions
+                    time.sleep(1)
+                    field.click()
+                    field.send_keys(Keys.END)  # Aller à la fin du texte
+                    time.sleep(1)
+                    
+                    # Tenter une touche flèche bas pour activer la première suggestion
+                    field.send_keys(Keys.ARROW_DOWN)
+                    time.sleep(1)
+                    driver.save_screenshot('debug_screenshots/suggestions_apres_fleche_bas.png')
+                    
+                    # Valider la suggestion avec Entrée
+                    field.send_keys(Keys.ENTER)
+                    time.sleep(1)
+                    
+                    suggestion_found = True
+                    logger.info("✅ Suggestion sélectionnée avec la méthode d'interaction complète")
+                except Exception as e:
+                    logger.warning(f"Échec méthode 1: {e}")
+                
+                # APPROCHE 2: Sélection via JavaScript si la première méthode échoue
+                if not suggestion_found:
+                    try:
+                        logger.info("MÉTHODE 2: Sélection via JavaScript direct")
+                        # Script JS avancé pour trouver et sélectionner une suggestion
+                        js_script = """
+                        function findAndSelectSuggestion() {
+                            // Trouver tous les éléments qui pourraient être des suggestions
+                            var potentialSuggestions = [];
+                            
+                            // Sélecteurs spécifiques à React et aux composants FR Design System
+                            var selectors = [
+                                '.fr-autocomplete__menu-item',
+                                '.react-autosuggest__suggestion',
+                                '[role="option"]',
+                                '.suggestions li',
+                                'ul li[role="option"]',
+                                'div[role="listbox"] div',
+                                '.dropdown-item',
+                                '.autocomplete-result',
+                                '.results-item',
+                                'ul.autocomplete-results li',
+                                'div.suggestion-item'
+                            ];
+                            
+                            // Essayer chaque sélecteur
+                            for (var i = 0; i < selectors.length; i++) {
+                                var elements = document.querySelectorAll(selectors[i]);
+                                if (elements && elements.length > 0) {
+                                    console.log('Trouvé ' + elements.length + ' suggestions avec ' + selectors[i]);
+                                    
+                                    // Chercher d'abord un élément qui contient 'métier' ou 'emploi' mais pas 'formation'
+                                    for (var j = 0; j < elements.length; j++) {
+                                        var text = elements[j].innerText.toLowerCase();
+                                        if (text && 
+                                           (text.includes('métier') || text.includes('emploi') || 
+                                            text.includes('commercial') || text.includes('vendeur')) && 
+                                           !text.includes('formation') && !text.includes('diplôme')) {
+                                            
+                                            // C'est une suggestion de type métier, la cliquer
+                                            console.log('MÉTIER TROUVÉ: ' + text);
+                                            elements[j].click();
+                                            return 'Suggestion métier sélectionnée: ' + text;
+                                        }
+                                    }
+                                    
+                                    // Si pas trouvé de suggestion métier explicite, prendre la première
+                                    if (elements[0]) {
+                                        console.log('Sélection première suggestion: ' + elements[0].innerText);
+                                        elements[0].click();
+                                        return 'Première suggestion sélectionnée: ' + elements[0].innerText;
+                                    }
+                                }
+                            }
+                            
+                            // Recherche générique si les sélecteurs spécifiques échouent
+                            var allElements = document.querySelectorAll('*');
+                            var visibleElements = [];
+                            
+                            // Filtrer uniquement les éléments visibles qui semblent être des suggestions
+                            for (var i = 0; i < allElements.length; i++) {
+                                var el = allElements[i];
+                                var style = window.getComputedStyle(el);
+                                var rect = el.getBoundingClientRect();
+                                
+                                // Élément visible et semble être une suggestion (petit élément avec du texte)
+                                if (el.innerText && 
+                                    style.display !== 'none' && 
+                                    style.visibility !== 'hidden' && 
+                                    rect.height > 0 && rect.height < 100 && 
+                                    rect.width > 0 && rect.width < 500) {
+                                    
+                                    visibleElements.push(el);
+                                }
+                            }
+                            
+                            // Trier les éléments par probabilité d'être une suggestion
+                            visibleElements.sort(function(a, b) {
+                                var scoreA = 0;
+                                var scoreB = 0;
+                                
+                                var textA = a.innerText.toLowerCase();
+                                var textB = b.innerText.toLowerCase();
+                                
+                                // Donner un score basé sur le contenu
+                                if (textA.includes('métier')) scoreA += 5;
+                                if (textA.includes('emploi')) scoreA += 5;
+                                if (textA.includes('commercial')) scoreA += 3;
+                                if (textA.includes('formation')) scoreA -= 10;
+                                
+                                if (textB.includes('métier')) scoreB += 5;
+                                if (textB.includes('emploi')) scoreB += 5;
+                                if (textB.includes('commercial')) scoreB += 3;
+                                if (textB.includes('formation')) scoreB -= 10;
+                                
+                                return scoreB - scoreA;
+                            });
+                            
+                            // Sélectionner le meilleur élément
+                            if (visibleElements.length > 0) {
+                                console.log('Meilleur élément trouvé: ' + visibleElements[0].innerText);
+                                visibleElements[0].click();
+                                return 'Élément sélectionné: ' + visibleElements[0].innerText;
+                            }
+                            
+                            return 'Aucune suggestion trouvée';
+                        }
+                        
+                        // Exécuter la fonction
+                        return findAndSelectSuggestion();
+                        """
+                        
+                        # Exécuter le script et enregistrer le résultat
+                        js_result = driver.execute_script(js_script)
+                        logger.info(f"Résultat JavaScript: {js_result}")
+                        
+                        # Si le script a trouvé une suggestion, marquer comme succès
+                        if not 'aucune suggestion' in js_result.lower():
+                            suggestion_found = True
+                            logger.info("✅ Suggestion sélectionnée via JavaScript")
+                    except Exception as e:
+                        logger.warning(f"Échec méthode 2: {e}")
+                
+                # APPROCHE 3: Méthode brutale - Séquence de touches si les autres méthodes échouent
+                if not suggestion_found:
+                    try:
+                        logger.info("MÉTHODE 3: Séquence de touches brutale")
+                        # Effacer et saisir à nouveau
+                        field.clear()
+                        time.sleep(0.5)
+                        
+                        # Ajouter explicitement "Emploi" au début
+                        field.send_keys("Emploi " + value)
+                        time.sleep(1.5)
+                        
+                        # Séquence de touches
+                        field.send_keys(Keys.TAB)  # Sortir du champ
+                        time.sleep(0.5)
+                        field.click()  # Revenir au champ
+                        time.sleep(0.5)
+                        field.send_keys(Keys.ARROW_DOWN)  # 1ère suggestion
+                        time.sleep(0.5)
+                        field.send_keys(Keys.ARROW_DOWN)  # 2ème suggestion (souvent après un titre)
+                        time.sleep(0.5)
+                        field.send_keys(Keys.ENTER)
+                        suggestion_found = True
+                        logger.info("✅ Méthode brutale appliquée")
+                    except Exception as e:
+                        logger.warning(f"Échec méthode 3: {e}")
+                
+                # Capture d'écran après toutes les tentatives
+                driver.save_screenshot('debug_screenshots/apres_selection_suggestions_final.png')
+                
+                if not suggestion_found:
+                    logger.warning("⚠️ AUCUNE MÉTHODE N'A RÉUSSI À SÉLECTIONNER UNE SUGGESTION")
+                    # Dernière tentative désespérée - simuler un TAB puis ENTER
+                    try:
+                        field.send_keys(Keys.TAB)
+                        time.sleep(0.5)
+                        field.send_keys(Keys.ENTER)
+                    except Exception as e:
+                        logger.error(f"Erreur lors de la dernière tentative: {e}")
+                    
+                # Fin des trois approches - derniers logs
+                logger.info("Fin de la tentative de sélection des suggestions")
+            else:
+                # Pour les autres champs, utiliser la méthode standard
+                logger.info("Tentative avec flèche bas + Entrée pour sélectionner la suggestion...")
+                try:
+                    field.send_keys(Keys.ARROW_DOWN)
+                    time.sleep(0.5)
+                    field.send_keys(Keys.ENTER)
+                    logger.info("Méthode touches clavier appliquée")
+                except Exception as e:
+                    logger.error(f"Impossible de sélectionner une suggestion: {str(e)}")
+                    pass
+                
+            logger.info("Méthode de sélection des suggestions appliquée")
+            
+            time.sleep(1)  # Attendre après la sélection
+            
+            # Capture d'écran après remplissage
+            driver.save_screenshot(f'debug_screenshots/apres_remplissage_{field_id}.png')
+            
+            success = True
+            logger.info(f"✅ Valeur '{value}' saisie et suggestion sélectionnée")
+            break
+            
+        except Exception as e:
+            logger.warning(f"Erreur lors du remplissage du champ '{field_id}': {str(e)}")
+            time.sleep(1)
+    
+    if not success:
+        logger.error(f"\u274c Échec du remplissage du champ '{field_id}' après {max_attempts} tentatives")
+    
+    return success
+
+# Fin des trois approches - derniers logs
+logger.info("Fin de la tentative de sélection des suggestions")
+
+# --- Fonctions de postulation et capture importées depuis les modules externes ---
+# Voir postuler_functions.py et capture_functions.py
+
 # --- Processus de scraping principal ---
 
 def run_scraper(user_data):
@@ -854,6 +1559,90 @@ def run_scraper(user_data):
                 except Exception as e:
                     logger.warning(f"Erreur lors de la tentative de clic sur un élément visible: {e}")
                 
+                # Pause supplémentaire
+                time.sleep(3)
+                
+                # Décocher la case "Formations" si elle est cochée - Avec plusieurs tentatives
+                try:
+                    logger.info("IMPORTANT: Tentative de décocher la case Formations...")
+                    time.sleep(1)  # Attendre que tout soit chargé
+                    
+                    # Méthode 1: Utiliser la fonction existante
+                    success = uncheck_formations_checkbox(driver, wait)
+                    
+                    # Méthode 2: JavaScript direct et plus agressif pour décocher TOUTES les cases Formations
+                    js_code = """
+                    console.log('Décochage force des cases formations');
+                    // Approche 1: par attribut name
+                    var checkboxes = document.querySelectorAll('input[name="formations"][type="checkbox"]');
+                    console.log('Checkboxes formations trouvées:', checkboxes.length);
+                    
+                    // Décocher toutes les cases qui correspondent
+                    checkboxes.forEach(function(checkbox) {
+                        if (checkbox.checked || checkbox.getAttribute('checked') === 'true') {
+                            console.log('Case à décocher trouvée');
+                            checkbox.checked = false;
+                            checkbox.setAttribute('checked', 'false');
+                            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    });
+                    
+                    // Approche 2: par texte du label
+                    var labels = document.querySelectorAll('label');
+                    labels.forEach(function(label) {
+                        if (label.textContent.includes('Formation')) {
+                            var input = document.getElementById(label.getAttribute('for'));
+                            if (input && (input.checked || input.getAttribute('checked') === 'true')) {
+                                console.log('Case formation trouvée via label');
+                                input.checked = false;
+                                input.setAttribute('checked', 'false');
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+                    });
+                    
+                    // Approche 3: très agressive, cibler toute case à cocher avec un label contenant formation
+                    var allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+                    console.log('Total checkboxes:', allCheckboxes.length);
+                    allCheckboxes.forEach(function(cb) {
+                        var parentText = cb.parentElement ? cb.parentElement.textContent.toLowerCase() : '';
+                        if (parentText.includes('formation') && cb.checked) {
+                            console.log('Case formation trouvée via parent');
+                            cb.checked = false;
+                            cb.click();
+                        }
+                    });
+                    
+                    return 'Décochage forcé des cases Formations terminé';
+                    """
+                    
+                    result = driver.execute_script(js_code)
+                    logger.info(f"Résultat du décochage forcé: {result}")
+                    
+                    # Méthode 3: Décoche directe par Sélecteur CSS
+                    try:
+                        # Essayer de trouver directement les cases à décocher
+                        formations_checkboxes = driver.find_elements(By.CSS_SELECTOR, ".filter-checkbox input[type='checkbox']")
+                        for cb in formations_checkboxes:
+                            try:
+                                parent = cb.find_element(By.XPATH, "./..") 
+                                parent_text = parent.text.lower()
+                                if 'formation' in parent_text and cb.is_selected():
+                                    logger.info("Case Formation trouvée directement, tentative de décochage...")
+                                    driver.execute_script("arguments[0].click();", cb)
+                            except Exception as inner_e:
+                                pass
+                    except Exception as e:
+                        logger.warning(f"Erreur lors de la recherche directe de cases à décocher: {e}")
+                    
+                    # Prendre une capture d'écran après le décochage pour vérification
+                    driver.save_screenshot('debug_screenshots/apres_decochage.png')
+                    logger.info("Capture d'écran enregistrée après le décochage")
+                    
+                except Exception as e:
+                    logger.warning(f"Erreur lors de la tentative de décocher la case Formations: {e}")
+                    driver.save_screenshot('debug_screenshots/erreur_decochage.png')
+                    
                 # Pause supplémentaire
                 time.sleep(3)
                 
@@ -1373,29 +2162,224 @@ def run_scraper(user_data):
                         
                         # Déterminer le type d'offre
                         card_text = card.text.lower()
-                        offer_type = "Autre"
+                        offer_type = "Indéterminé"  # Par défaut
                         
-                        if any(term in card_text for term in ["formation", "école", "diplôme", "certific", "étude", "apprentissage"]):
-                            offer_type = "Formation"
-                        elif any(term in card_text for term in ["entreprise", "emploi", "offre", "recrute", "job", "cdd", "cdi", "alternance"]):
-                            offer_type = "Entreprise"
-                        
-                        # Vérifier si l'offre est une offre d'entreprise et non une formation
-                        if offer_type.lower() != "formation":
-                            # Créer un dictionnaire avec les informations de l'offre
-                            job_offer = {
-                                "title": title,
-                                "company": company,
-                                "location": location,
-                                "link": link,
-                                "type": offer_type,
-                                "source": "La bonne alternance"
-                            }
+                        # Capture d'une capture d'écran de la carte pour analyse
+                        try:
+                            driver.execute_script("arguments[0].style.border = '3px solid red';", card)
+                            driver.save_screenshot(f'debug_screenshots/card_analyzed_{index}.png')
+                            driver.execute_script("arguments[0].style.border = '';", card)
+                        except:
+                            pass
                             
-                            job_offers.append(job_offer)
-                            logger.info(f"Offre {index+1} ajoutée: {title} chez {company} à {location} ({offer_type})")
+                        # Recherche de mots-clés forts dans le titre et la description pour les formations
+                        formation_keywords_strong = [
+                            "formation", "bts", "bachelor", "master", "licence", "dut", 
+                            "certifica", "certificat", "diplôme", "rncp", 
+                            "(bts)", "(master)", "(bachelor)", "(licence)", "(dut)", "(mba)", 
+                            "(tp)", "(lp)", "(formatives)", "formation en"
+                        ]
+                        
+                        # Mots-clés secondaires pour les formations
+                        formation_keywords_weak = [
+                            "école", "étude", "deust", "formatives", "cfa", "institut", 
+                            "eemi", "formasup", "université", "centre", "cnam", "formation 100%", 
+                            "distanc", "parcours", "étudiant", "apprentissage", "bac", "bac+"
+                        ]
+                        
+                        # Identifiants forts pour les offres d'emploi
+                        entreprise_keywords_strong = [
+                            "métier", "entreprise recrute", "poste", "contrat", 
+                            "cdi", "cdd", "emploi", "offre d'emploi", "job", 
+                            "recrut", "recherche un", "recherche une", "embauche", "salaire",
+                            "rémunération", "expérience", "temps plein", "temps partiel"
+                        ]
+                        
+                        # Mots-clés secondaires pour les offres d'emploi
+                        entreprise_keywords_weak = [
+                            "entreprise", "alternance", "commercial", "vendeur", "acheteur", 
+                            "manager", "directeur", "assistant", "technicien", "ingénieur",
+                            "responsable", "chef", "chargé", "collaborateur", "candidature"
+                        ]
+                        
+                        # Règles de détection plus précises avec pondération avancée
+                        formation_score = 0
+                        entreprise_score = 0
+                        
+                        # Créer un dictionnaire des détails de scoring pour le débogage
+                        score_details = {
+                            "formation_matches": {},
+                            "entreprise_matches": {}
+                        }
+                        
+                        # Vérifier si les mots "MÉTIER" ou "FORMATION" apparaissent explicitement
+                        # Ce sont des marqueurs très forts utilisés par le site
+                        if "MÉTIER" in card.text or "métier" in card_text:
+                            entreprise_score += 15  # Pondération encore plus forte - indicateur crucial
+                            score_details["entreprise_matches"]["MÉTIER (marqueur explicite)"] = 15
+                        
+                        if "FORMATION" in card.text or "(formation)" in card_text:
+                            formation_score += 15  # Pondération encore plus forte - indicateur crucial
+                            score_details["formation_matches"]["FORMATION (marqueur explicite)"] = 15
+                            
+                        # 1. Vérifier les mots-clés forts pour les formations avec pondération élevée
+                        for term in formation_keywords_strong:
+                            if term in card_text:
+                                formation_score += 3  # Pondération forte (3x)
+                                score_details["formation_matches"][f"strong: {term}"] = 3
+                                
+                        # 2. Vérifier les mots-clés secondaires pour les formations
+                        for term in formation_keywords_weak:
+                            if term in card_text:
+                                formation_score += 1  # Pondération standard
+                                score_details["formation_matches"][f"weak: {term}"] = 1
+                                
+                        # 3. Vérifier les mots-clés forts pour les offres d'emploi
+                        for term in entreprise_keywords_strong:
+                            if term in card_text:
+                                entreprise_score += 4  # Pondération très forte (4x) pour compenser le biais
+                                score_details["entreprise_matches"][f"strong: {term}"] = 4
+                                
+                        # 4. Vérifier les mots-clés secondaires pour les offres d'emploi
+                        for term in entreprise_keywords_weak:
+                            if term in card_text:
+                                entreprise_score += 2  # Pondération forte (2x)
+                                score_details["entreprise_matches"][f"weak: {term}"] = 2
+                        
+                        # 5. Détecter les titres d'offres
+                        card_lines = card.text.split('\n')
+                        if len(card_lines) > 1:
+                            first_line = card_lines[0].strip()
+                            # Format typique d'une formation: BTS COMMERCE INTERNATIONAL (titre en majuscules)
+                            if first_line.isupper() and len(first_line) > 5:
+                                # Vérifier les acronymes courants de formation en majuscules
+                                if any(kw in first_line for kw in ["BTS", "MASTER", "LICENCE", "BACHELOR", "CAP", "MBA", "DUT"]):
+                                    formation_score += 8  # Très forte indication d'une formation
+                                    score_details["formation_matches"]["Titre en majuscules avec acronyme de formation"] = 8
+                            
+                            # Format typique d'un intitulé de poste: Commercial, Assistant, etc.
+                            if not first_line.isupper() and len(first_line) > 5:
+                                # Vérifier les termes courants des offres d'emploi
+                                if any(kw in first_line.lower() for kw in ["recrute", "recherche", "cdi", "cdd", "poste"]):
+                                    entreprise_score += 7  # Forte indication d'un poste
+                                    score_details["entreprise_matches"]["Titre avec termes d'emploi"] = 7
+                        
+                        # 6. Analyse spécifique pour La Bonne Alternance
+                        # Sur ce site, les offres de formations contiennent souvent des parenthèses avec le type
+                        if any(pattern in card_text for pattern in ["(bts)", "(bachelor)", "(master)", "(licence)", "(mba)", "(dut)", "(formatives)", "(tp)", "(lp)"]):
+                            formation_score += 10  # Indication très forte d'une formation
+                            score_details["formation_matches"]["Format avec parenthèses typiques des formations"] = 10
+                            
+                        # 7. Vérification de l'URL si disponible
+                        if link and "/offres/" in link.lower():
+                            entreprise_score += 6  # Les URLs des offres d'emploi contiennent souvent "/offres/"
+                            score_details["entreprise_matches"]["URL contenant /offres/"] = 6
+                        elif link and "/formations/" in link.lower():
+                            formation_score += 6  # Les URLs des formations contiennent souvent "/formations/"
+                            score_details["formation_matches"]["URL contenant /formations/"] = 6
+                            
+                        # Décision finale basée sur les scores avec une analyse plus raffinée
+                        if formation_score > entreprise_score * 1.2:  # Exige une différence significative pour être classé comme formation
+                            offer_type = "Formation"
+                            decision_reason = "Score formation significativement plus élevé"
+                        elif entreprise_score > formation_score * 1.0:  # Moins strict pour les offres d'emploi
+                            offer_type = "Entreprise"
+                            decision_reason = "Score entreprise plus élevé"
                         else:
-                            logger.info(f"Formation ignorée: {title} chez {company} à {location}")
+                            # En cas de scores proches, utiliser des critères de décision supplémentaires
+                            
+                            # Vérifier des marqueurs explicites très spécifiques
+                            if any(marker in card.text for marker in ["UNIVERSIT", "FORMATION", "BTS ", " BTS", "LICENCE", "BACHELOR"]):
+                                offer_type = "Formation" 
+                                decision_reason = "Marqueurs explicites de formation détectés dans un cas ambigu"
+                            elif "MÉTIER" in card.text or any(marker in card_text for marker in ["cdi", "cdd", "recrute", "poste de"]):
+                                offer_type = "Entreprise"
+                                decision_reason = "Marqueurs explicites d'emploi détectés dans un cas ambigu"
+                            else:
+                                # Dans le doute absolu, préférer les offres d'emploi comme demandé par l'utilisateur
+                                offer_type = "Entreprise"
+                                decision_reason = "Décision par défaut - favorise les offres d'entreprise"
+                            
+                        # Log détaillé pour le débogage
+                        log_detail = f"Carte analysée:\n"
+                        log_detail += f"- Titre: {title[:50]}...\n"
+                        log_detail += f"- Score formation: {formation_score}, détails: {score_details['formation_matches']}\n"
+                        log_detail += f"- Score entreprise: {entreprise_score}, détails: {score_details['entreprise_matches']}\n"
+                        log_detail += f"- Type final: {offer_type} (Raison: {decision_reason})\n"
+                        logger.info(log_detail)
+                        
+                        # Filtrer uniquement les offres qui ne sont pas des formations
+                        if offer_type == "Formation":
+                            # Enregistrer le détail de la formation ignorée pour débogage
+                            logger.info(f"Formation ignorée: {card.text.replace('\n', ' ')[:100]}")
+                            continue
+                        
+                        # Créer un dictionnaire avec les informations de l'offre
+                        job_offer = {
+                            "title": title,
+                            "company": company,
+                            "location": location,
+                            "link": link,
+                            "type": offer_type,
+                            "source": "La bonne alternance",
+                            "postulation_status": "non_postulé"  # Statut initial
+                        }
+                        
+                        # Option pour postuler automatiquement à l'offre
+                        if link and AUTO_POSTULER:
+                            logger.info(f"Tentative de postulation automatique pour: {title} chez {company}")
+                            
+                            # Sauvegarder l'état actuel du navigateur
+                            current_url = driver.current_url
+                            current_handles = driver.window_handles
+                            main_handle = driver.current_window_handle
+                            
+                            # Tenter de postuler
+                            driver.execute_script("window.open(arguments[0], '_blank');", link)
+                            time.sleep(2)
+                            
+                            # Basculer vers le nouvel onglet
+                            new_handles = [handle for handle in driver.window_handles if handle != main_handle]
+                            if new_handles:
+                                driver.switch_to.window(new_handles[0])
+                                
+                                # Appliquer la fonction de postulation, si elle est disponible
+                                if POSTULER_FUNCTIONS_LOADED:
+                                    # Fermer les onglets précédemment ouverts car la fonction postuler_offre gère ses propres onglets
+                                    driver.close()
+                                    driver.switch_to.window(main_handle)
+                                    
+                                    # Appeler la fonction de postulation avec les bons paramètres (driver, url, titre_offre)
+                                    result = postuler_offre(driver, link, f"{title} chez {company}")
+                                    
+                                    if result["status"] == "succes" or result["status"] == "formulaire_rempli":
+                                        job_offer["postulation_status"] = result["status"]
+                                        logger.info(f"✅ Candidature initiée pour: {title}")
+                                    else:
+                                        job_offer["postulation_status"] = "échec_postulation"
+                                        logger.warning(f"❌ Échec de la candidature pour: {title} - {result.get('raison', '')}")
+                                else:
+                                    # Utiliser l'ancienne méthode si le module de postulation n'est pas chargé
+                                    logger.warning("Module postuler_functions non disponible, utilisation de la méthode simple")
+                                    driver.save_screenshot(f"debug_screenshots/page_offre_{title.replace(' ', '_')}.png")
+                                    job_offer["postulation_status"] = "module_manquant"
+                                    
+                                    # Possibilité de prendre une pause pour inspection manuelle
+                                    if PAUSE_APRES_POSTULATION:
+                                        input("Appuyez sur Entrée pour continuer après inspection du formulaire...")
+                                    
+                                    # Fermer l'onglet et revenir à l'onglet principal
+                                    driver.close()
+                                    driver.switch_to.window(main_handle)
+                            else:
+                                logger.error("Impossible d'ouvrir un nouvel onglet pour postuler")
+                            
+                            # Revenir à l'iframe des résultats si nécessaire
+                            switch_to_iframe_if_needed(driver)
+                        
+                        job_offers.append(job_offer)
+                        logger.info(f"Offre {index+1} ajoutée: {title} chez {company} à {location} ({offer_type}) - Statut postulation: {job_offer['postulation_status']}")
+                        
                     except Exception as e:
                         logger.error(f"Erreur lors de l'extraction des données de la carte {index}: {e}", exc_info=True)
                 
@@ -1505,12 +2489,97 @@ def main():
     
     if not user_data:
         logger.warning(f"Utilisateur non trouvé, utilisation d'un profil de test.")
-        user_data = {'email': 'test@example.com', 'search_query': 'Développeur web', 'location': 'Paris'}
+        user_data = {'email': 'test@example.com', 'search_query': 'Commercial', 'location': 'Lyon'}
 
     if user_data:
         run_scraper(user_data)
     else:
         logger.error(f"Aucune donnée utilisateur disponible pour lancer le scraper.")
 
+def setup_and_run():
+    """Fonction principale pour configurer les paramètres et lancer le scraper"""
+    import argparse
+    import os
+    
+    # Variables globales à modifier
+    global AUTO_POSTULER, PAUSE_APRES_POSTULATION
+    
+    # Configuration des options en ligne de commande
+    parser = argparse.ArgumentParser(description="Scraper pour La Bonne Alternance avec postulation automatique")
+    
+    # Options pour l'utilisateur
+    parser.add_argument("--email", type=str, help="Email de l'utilisateur pour récupérer les données de profil")
+    parser.add_argument("--metier", type=str, help="Métier à rechercher (ex: 'Commercial')")
+    parser.add_argument("--ville", type=str, help="Ville ou localisation (ex: 'Paris')")
+    
+    # Options pour la postulation
+    parser.add_argument("--postuler", action="store_true", help="Activer la postulation automatique")
+    parser.add_argument("--no-postuler", dest="postuler", action="store_false", help="Désactiver la postulation automatique")
+    parser.add_argument("--remplir", action="store_true", help="Remplir automatiquement le formulaire de candidature")
+    parser.add_argument("--no-remplir", dest="remplir", action="store_false", help="Désactiver le remplissage automatique")
+    parser.add_argument("--envoyer", action="store_true", help="Envoyer automatiquement la candidature après remplissage")
+    parser.add_argument("--pause", action="store_true", help="Mettre en pause après l'ouverture du formulaire pour inspection manuelle")
+    parser.add_argument("--cv", type=str, help="Chemin vers le fichier CV (PDF ou DOCX)")
+    
+    # Options pour le débogage
+    parser.add_argument("--debug", action="store_true", help="Activer le mode débogage avec plus de logs")
+    parser.add_argument("--headless", action="store_true", help="Exécuter en mode headless (sans interface graphique)")
+    
+    # Paramètres par défaut
+    parser.set_defaults(
+        postuler=AUTO_POSTULER,
+        remplir=True if POSTULER_FUNCTIONS_LOADED else False,
+        envoyer=False,
+        pause=PAUSE_APRES_POSTULATION,
+        debug=False,
+        headless=False
+    )
+    
+    # Analyser les arguments
+    args = parser.parse_args()
+    
+    # Configurer le mode de débogage si demandé
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Mode debug activé")
+    
+    # Modifier les variables globales en fonction des arguments
+    AUTO_POSTULER = args.postuler
+    PAUSE_APRES_POSTULATION = args.pause
+    
+    # Configurer les variables du module externe si disponible
+    if POSTULER_FUNCTIONS_LOADED:
+        import postuler_functions
+        postuler_functions.AUTO_REMPLIR_FORMULAIRE = args.remplir
+        postuler_functions.AUTO_ENVOYER_CANDIDATURE = args.envoyer
+        if args.cv:
+            postuler_functions.CHEMIN_CV = os.path.expanduser(args.cv)
+    
+    # Afficher la configuration
+    logger.info(f"Configuration: Postulation automatique = {AUTO_POSTULER}, "
+              f"Remplissage auto = {args.remplir}, "
+              f"Envoi auto = {args.envoyer}, "
+              f"Pause inspection = {PAUSE_APRES_POSTULATION}")
+    
+    # Créer un objet user_data à partir des arguments de ligne de commande
+    if args.email or args.metier or args.ville:
+        user_data = {}
+        if args.email:
+            user_data['email'] = args.email
+        else:
+            user_data['email'] = 'test@example.com'
+            
+        if args.metier:
+            user_data['search_query'] = args.metier
+        
+        if args.ville:
+            user_data['location'] = args.ville
+        
+        # Lancer directement le scraper avec les données spécifiées
+        run_scraper(user_data)
+    else:
+        # Lancer le processus normal via la fonction main
+        main()
+
 if __name__ == "__main__":
-    main()
+    setup_and_run()
