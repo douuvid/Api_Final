@@ -1,0 +1,459 @@
+import logging
+import os
+import time
+import traceback
+
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Configuration pour la postulation automatique
+AUTO_REMPLIR_FORMULAIRE = True  # Activer/désactiver le remplissage automatique du formulaire
+AUTO_ENVOYER_CANDIDATURE = False  # Activer/désactiver l'envoi automatique du formulaire après remplissage
+PAUSE_AVANT_ENVOI = True  # Marquer une pause avant l'envoi final
+
+# Chemin vers le CV à envoyer (format PDF ou DOCX)
+CHEMIN_CV = os.path.expanduser("~/Desktop/CV.pdf")  # À remplacer par le chemin réel vers le CV
+
+# Assurer l'existence du répertoire pour les captures d'écran de debug
+os.makedirs("debug_screenshots", exist_ok=True)
+
+# Message de candidature par défaut
+MESSAGE_CANDIDATURE = """Bonjour,
+
+Je suis vivement intéressé(e) par cette offre d'alternance qui correspond parfaitement à mon projet professionnel. 
+Mon profil et ma formation correspondent aux compétences requises pour ce poste.
+
+Je serais ravi(e) de pouvoir échanger avec vous pour vous présenter ma motivation et mes ambitions.
+
+Cordialement,
+[Prénom Nom]
+"""
+
+def remplir_formulaire_candidature(driver, user_data, titre_offre):
+    """
+    Remplit automatiquement le formulaire de candidature avec les données utilisateur
+    """
+    try:
+        logger.info("Début du remplissage du formulaire de candidature...")
+        wait = WebDriverWait(driver, 10)
+        
+        # Attendre que le formulaire soit complètement chargé
+        time.sleep(2)  # Attendre un moment pour que le modal soit complètement affiché
+        
+        # Capturer un screenshot au début du remplissage
+        try:
+            driver.save_screenshot(f"debug_screenshots/formulaire_avant_remplissage_{titre_offre.replace(' ', '_')}.png")
+        except Exception as e:
+            logger.debug(f"Impossible de capturer le screenshot avant remplissage: {e}")
+            
+        # Remplir les champs principaux du formulaire (nom, prénom, email, téléphone)
+        fields_mapping = {
+            "firstName": user_data.get('prenom', 'Jean'),
+            "lastName": user_data.get('nom', 'Dupont'),
+            "email": user_data.get('email', 'jean.dupont@example.com'),
+            "phone": user_data.get('telephone', '0612345678')
+        }
+        
+        # Tentative de remplissage des champs par ID, nom ou autres sélecteurs
+        for field_id, value in fields_mapping.items():
+            # Essayer différents sélecteurs pour chaque champ
+            selectors = [
+                f"#{field_id}",  # Par ID
+                f"[name='{field_id}']",  # Par nom
+                f"input[placeholder*='{field_id}']",  # Par placeholder contenant
+                f"//input[@id='{field_id}' or @name='{field_id}']",  # XPath par ID ou nom
+            ]
+            
+            field_found = False
+            for selector in selectors:
+                try:
+                    if selector.startswith("//"):  # XPath
+                        field = driver.find_element(By.XPATH, selector)
+                    else:  # CSS
+                        field = driver.find_element(By.CSS_SELECTOR, selector)
+                        
+                    # Mettre en évidence le champ pour le débogage
+                    driver.execute_script("arguments[0].style.border='2px solid green';", field)
+                    
+                    # Effacer et remplir le champ
+                    field.clear()
+                    field.send_keys(value)
+                    logger.info(f"✅ Champ {field_id} rempli avec {value}")
+                    field_found = True
+                    break
+                except Exception as e:
+                    logger.debug(f"Sélecteur {selector} non trouvé pour {field_id}: {e}")
+            
+            if not field_found:
+                logger.warning(f"⚠️ Impossible de trouver le champ {field_id}")
+                
+        # Remplir le message de candidature
+        try:
+            message_selectors = [
+                "#message",
+                "textarea[name='message']",
+                "textarea",
+                "//textarea"
+            ]
+            
+            message_field = None
+            for selector in message_selectors:
+                try:
+                    if selector.startswith("//"):  # XPath
+                        message_field = driver.find_element(By.XPATH, selector)
+                    else:  # CSS
+                        message_field = driver.find_element(By.CSS_SELECTOR, selector)
+                    
+                    if message_field:
+                        break
+                except:
+                    continue
+            
+            if message_field:
+                # Personnaliser le message avec le nom de l'utilisateur
+                message = MESSAGE_CANDIDATURE.replace("[Prénom Nom]", f"{user_data.get('prenom', 'Jean')} {user_data.get('nom', 'Dupont')}")
+                driver.execute_script("arguments[0].value = arguments[1]", message_field, message)
+                logger.info("✅ Message de candidature rempli")
+            else:
+                logger.warning("Champ message non trouvé")
+        except Exception as e:
+            logger.warning(f"Impossible de remplir le message de candidature: {e}")
+        
+        # Upload du CV
+        try:
+            # Trouver l'input file caché en utilisant plusieurs sélecteurs
+            file_input_selectors = [
+                "input[type='file']",
+                "input[accept='.docx,.pdf']",
+                "input[accept*='pdf']",
+                "//input[@type='file']"
+            ]
+            
+            file_input = None
+            for selector in file_input_selectors:
+                try:
+                    if selector.startswith("//"):  # XPath
+                        file_input = driver.find_element(By.XPATH, selector)
+                    else:  # CSS
+                        file_input = driver.find_element(By.CSS_SELECTOR, selector)
+                    
+                    if file_input:
+                        break
+                except:
+                    continue
+            
+            if file_input:
+                # Vérifier si le chemin du CV existe
+                if os.path.exists(CHEMIN_CV):
+                    # Rendre l'input visible temporairement pour permettre l'upload
+                    driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.opacity = '1';", file_input)
+                    file_input.send_keys(CHEMIN_CV)
+                    logger.info(f"✅ CV uploadé depuis {CHEMIN_CV}")
+                    
+                    # Attendre que le fichier soit traité
+                    time.sleep(1)
+                    
+                    # Vérifier si l'upload a réussi
+                    try:
+                        success_indicators = [
+                            ".upload-success",
+                            ".file-name",
+                            "[data-testid='upload-success']"
+                        ]
+                        upload_success = False
+                        for indicator in success_indicators:
+                            try:
+                                driver.find_element(By.CSS_SELECTOR, indicator)
+                                upload_success = True
+                                break
+                            except:
+                                continue
+                                
+                        if upload_success:
+                            logger.info("✅ Upload CV confirmé")
+                        else:
+                            logger.warning("⚠️ L'upload du CV semble avoir échoué - aucun indicateur de succès trouvé")
+                    except Exception as e:
+                        logger.debug(f"Impossible de vérifier le statut de l'upload: {e}")
+                else:
+                    logger.warning(f"Le fichier CV n'existe pas à l'emplacement: {CHEMIN_CV}")
+            else:
+                logger.warning("Impossible de trouver le champ d'upload de CV")
+        except Exception as e:
+            logger.warning(f"Erreur lors de l'upload du CV: {e}")
+        
+        # Cocher toutes les cases de vérification
+        try:
+            # Sélectionner toutes les cases à cocher
+            checkboxes = driver.find_elements(By.CSS_SELECTOR, ".chakra-checkbox__control")
+            for checkbox in checkboxes:
+                try:
+                    # Utiliser JavaScript pour simuler un clic sur la case
+                    driver.execute_script("arguments[0].click();", checkbox)
+                except:
+                    continue
+            logger.info("✅ Cases à cocher activées")
+        except Exception as e:
+            logger.warning(f"Impossible de cocher les cases: {e}")
+        
+        # Remplir les champs obligatoires
+        try:
+            # Nom
+            nom_field = wait.until(EC.presence_of_element_located((By.ID, "lastName")))
+            nom_field.clear()
+            nom_field.send_keys(user_data.get('nom', 'Nom'))
+            
+            # Prénom
+            prenom_field = wait.until(EC.presence_of_element_located((By.ID, "firstName")))
+            prenom_field.clear()
+            prenom_field.send_keys(user_data.get('prenom', 'Prénom'))
+            
+            # Email
+            email_field = wait.until(EC.presence_of_element_located((By.ID, "email")))
+            email_field.clear()
+            email_field.send_keys(user_data.get('email', 'email@example.com'))
+            
+            # Téléphone
+            phone_field = wait.until(EC.presence_of_element_located((By.ID, "phone")))
+            phone_field.clear()
+            phone_field.send_keys(user_data.get('telephone', '0612345678'))
+            
+            logger.info("✅ Champs personnels remplis avec succès")
+        except Exception as e:
+            logger.warning(f"Erreur lors du remplissage des champs personnels: {e}")
+            driver.save_screenshot(f"debug_screenshots/erreur_champs_personnels_{titre_offre.replace(' ', '_')}.png")
+        
+        # Option pour envoyer automatiquement la candidature
+        if AUTO_ENVOYER_CANDIDATURE:
+            try:
+                submit_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
+                logger.info("Soumission du formulaire de candidature...")
+                submit_button.click()
+                
+                # Attendre une confirmation
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".fr-alert--success")))
+                logger.info(f"✅ Candidature envoyée avec succès pour: {titre_offre}")
+                return {"status": "soumis"}
+            except Exception as e:
+                logger.warning(f"Erreur lors de la soumission du formulaire: {e}")
+                driver.save_screenshot(f"debug_screenshots/erreur_soumission_{titre_offre.replace(' ', '_')}.png")
+                return {"status": "formulaire_rempli", "soumission": "echec", "raison": str(e)}
+        else:
+            logger.info("Formulaire rempli avec succès, en attente de confirmation manuelle pour l'envoi")
+            return {"status": "formulaire_rempli", "soumission": "en_attente"}
+            
+    except Exception as e:
+        logger.error(f"Erreur lors du remplissage du formulaire: {e}")
+        driver.save_screenshot(f"debug_screenshots/erreur_remplissage_{titre_offre.replace(' ', '_')}.png")
+        return {"status": "echec", "raison": str(e)}
+
+
+def postuler_offre(driver, url, titre_offre):
+    """
+    Ouvre une offre et clique sur le bouton "J'envoie ma candidature"
+    """
+    try:
+        logger.info(f"Ouverture de l'offre pour postuler: {url}")
+        # Ouvrir l'URL dans un nouvel onglet
+        driver.execute_script(f"window.open('{url}', '_blank');")
+        
+        # Basculer vers le nouvel onglet
+        driver.switch_to.window(driver.window_handles[-1])
+        
+        # Attendre que la page soit chargée
+        wait = WebDriverWait(driver, 15)
+        
+        # Tenter de trouver et cliquer sur le bouton de candidature
+        # Multiples sélecteurs pour maximiser les chances
+        selectors = [
+            "button[data-tracking-id='postuler-offre-lba']",
+            "button:contains('J'envoie ma candidature')",
+            "//button[contains(., 'J'envoie ma candidature')]",
+            ".fr-btn[type='button']"
+        ]
+        
+        bouton_trouve = False
+        for selector in selectors:
+            try:
+                if selector.startswith("//"):  # XPath
+                    bouton = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+                elif ":contains(" in selector:  # Sélecteur jQuery
+                    texte = selector.split(":contains('")[1].split("')")[0]
+                    js = f"""
+                    var buttons = document.querySelectorAll('button');
+                    for (var i = 0; i < buttons.length; i++) {{
+                        if (buttons[i].textContent.includes('{texte}')) {{
+                            return buttons[i];
+                        }}
+                    }}
+                    return null;
+                    """
+                    bouton = driver.execute_script(js)
+                    if bouton:
+                        wait.until(EC.element_to_be_clickable((By.XPATH, f"//button[contains(., '{texte}')]")))
+                else:  # Sélecteur CSS
+                    bouton = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                
+                if bouton:
+                    logger.info(f"✅ Bouton 'J'envoie ma candidature' trouvé")
+                    # Mettre en évidence le bouton pour le débogage
+                    driver.execute_script("arguments[0].style.border='3px solid red';", bouton)
+                    
+                    # Capturer un screenshot avant de cliquer
+                    driver.save_screenshot(f"debug_screenshots/avant_clic_candidature_{titre_offre.replace(' ', '_')}.png")
+                    
+                    # Cliquer sur le bouton
+                    bouton.click()
+                    logger.info("✅ Premier clic sur le bouton 'J'envoie ma candidature' effectué")
+                    bouton_trouve = True
+                    break
+            except Exception as e:
+                logger.debug(f"Sélecteur {selector} non trouvé: {e}")
+        
+{{ ... }}
+            logger.warning(f"❌ Impossible de trouver le bouton de candidature pour {titre_offre}")
+            driver.save_screenshot(f"debug_screenshots/bouton_candidature_non_trouve_{titre_offre.replace(' ', '_')}.png")
+            return {"status": "echec", "raison": "bouton_non_trouve"}
+        
+        # Attendre l'apparition du formulaire de candidature
+        form_selectors = [
+            "form",
+            ".chakra-modal__body form",
+            "//form"
+        ]
+        
+        form_trouve = False
+        for selector in form_selectors:
+            try:
+                if selector.startswith("//"):  # XPath
+                    wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+                else:  # Sélecteur CSS
+                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                
+                logger.info(f"✅ Formulaire de candidature détecté avec le sélecteur {selector}")
+                form_trouve = True
+                break
+            except Exception as e:
+                logger.debug(f"Sélecteur de formulaire {selector} non trouvé: {e}")
+        
+        if not form_trouve:
+            logger.warning(f"❌ Formulaire de candidature non trouvé pour {titre_offre}")
+            driver.save_screenshot(f"debug_screenshots/formulaire_non_trouve_{titre_offre.replace(' ', '_')}.png")
+            return {"status": "echec", "raison": "formulaire_non_trouve"}
+        
+        # Formulaire détecté avec succès
+        logger.info(f"✅ Candidature initiée pour: {titre_offre}")
+        driver.save_screenshot(f"debug_screenshots/formulaire_candidature_{titre_offre.replace(' ', '_')}.png")
+        
+        # Remplir automatiquement le formulaire si l'option est activée
+        result = {"status": "succes"}
+        if AUTO_REMPLIR_FORMULAIRE:
+            # Récupérer les données utilisateur (par exemple depuis un profil utilisateur)
+            user_data = {
+                'nom': 'Dupont',
+                'prenom': 'Jean',
+                'email': 'jean.dupont@example.com',
+                'telephone': '0612345678'
+            }
+            result = remplir_formulaire_candidature(driver, user_data, titre_offre)
+        
+        # Option de pause pour inspection manuelle du formulaire
+        if not AUTO_ENVOYER_CANDIDATURE:
+            input("Appuyez sur Entrée pour continuer après inspection du formulaire...")
+        
+        # Cliquer sur le bouton final d'envoi de candidature si AUTO_ENVOYER_CANDIDATURE est activé
+        if AUTO_ENVOYER_CANDIDATURE:
+            try:
+                logger.info("Tentative de soumission du formulaire de candidature...")
+                
+                # Prendre une capture d'écran avant la soumission
+                driver.save_screenshot(f"debug_screenshots/avant_soumission_{titre_offre.replace(' ', '_')}.png")
+                
+                # Chercher le bouton de soumission (différents sélecteurs possibles)
+                submit_button_selectors = [
+                    "button[type='submit']",
+                    "button.chakra-button",
+                    "//button[contains(., 'envoie')]",
+                    "//button[contains(., 'Candidature')]",
+                    "//button[contains(., 'candidature')]",
+                    ".submit-button",
+                    "#submitButton",
+                    "button:not([disabled])"
+                ]
+                
+                submit_button_found = False
+                for selector in submit_button_selectors:
+                    try:
+                        if selector.startswith("//"):  # XPath
+                            submit_button = driver.find_element(By.XPATH, selector)
+                        else:  # CSS
+                            submit_button = driver.find_element(By.CSS_SELECTOR, selector)
+                        
+                        # Mettre en évidence le bouton pour le débogage
+                        driver.execute_script("arguments[0].style.border='3px solid red';", submit_button)
+                        
+                        # Vérifier si le bouton est un bouton de soumission probable
+                        button_text = submit_button.text.lower()
+                        if 'envoie' in button_text or 'candidature' in button_text or 'postuler' in button_text or 'valider' in button_text:
+                            logger.info(f"✅ Bouton de soumission trouvé: '{submit_button.text}'")
+                            time.sleep(1)  # Petite pause avant de cliquer
+                            submit_button.click()
+                            submit_button_found = True
+                            
+                            # Attendre un moment pour la confirmation
+                            time.sleep(2)
+                            
+                            # Vérifier si la soumission a réussi (indicateurs possibles)
+                            success_selectors = [
+                                ".success-message",
+                                ".confirmation",
+                                "//div[contains(., 'Candidature envoyée')]",
+                                "//div[contains(., 'succès')]"
+                            ]
+                            
+                            success_found = False
+                            for success_selector in success_selectors:
+                                try:
+                                    if success_selector.startswith("//"):  # XPath
+                                        driver.find_element(By.XPATH, success_selector)
+                                    else:  # CSS
+                                        driver.find_element(By.CSS_SELECTOR, success_selector)
+                                    
+                                    success_found = True
+                                    logger.info("✅ Confirmation de l'envoi de la candidature trouvée")
+                                    break
+                                except:
+                                    continue
+                                    
+                            if not success_found:
+                                logger.info("⚠️ Pas d'indicateur de succès trouvé, mais le formulaire a été soumis")
+                                
+                            break
+                    except Exception as e:
+                        logger.debug(f"Sélecteur {selector} pour bouton de soumission non trouvé: {e}")
+                
+                if not submit_button_found:
+                    logger.warning("❌ Impossible de trouver le bouton de soumission du formulaire")
+                    driver.save_screenshot(f"debug_screenshots/bouton_soumission_non_trouve_{titre_offre.replace(' ', '_')}.png")
+            except Exception as e:
+                logger.error(f"Erreur lors de la tentative de soumission du formulaire: {e}")
+                driver.save_screenshot(f"debug_screenshots/erreur_soumission_{titre_offre.replace(' ', '_')}.png")
+        
+        return {"status": "succes", "formulaire_rempli": True, "formulaire_soumis": AUTO_ENVOYER_CANDIDATURE}
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la tentative de postuler à l'offre {titre_offre}: {e}")
+        traceback.print_exc()
+        driver.save_screenshot(f"debug_screenshots/erreur_postulation_{titre_offre.replace(' ', '_')}.png")
+        return {"status": "erreur", "raison": str(e)}
+    finally:
+        # Revenir à l'onglet principal
+        if len(driver.window_handles) > 1:
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
