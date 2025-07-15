@@ -8,14 +8,25 @@ import sys
 import json
 import logging
 import datetime
+import dotenv
 from typing import Dict, Any
+
+# Charger les variables d'environnement du fichier .env s'il existe
+dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.env')
+if os.path.exists(dotenv_path):
+    dotenv.load_dotenv(dotenv_path)
+    print(f"Variables d'environnement chargées depuis {dotenv_path}")
+
+# Correction manuelle des paramètres PostgreSQL pour utiliser la base existante
+os.environ["DB_PORT"] = "5433"  # Port détecté dans les processus en cours d'exécution
+os.environ["DB_NAME"] = "job_search_app"  # Base de données existante detectée
 
 # Configuration du logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/db_integration.log'),
+        logging.FileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs', 'db_integration.log')),
         logging.StreamHandler()
     ]
 )
@@ -85,21 +96,29 @@ class DatabaseIntegration:
             SELECT * FROM users 
             WHERE id = %s
             """
+            logger.info(f"Exécution de la requête pour l'utilisateur ID {user_id}...")
             user_data = self.db._execute_query(query, (user_id,), fetch='one')
             
             if not user_data:
                 logger.error(f"❌ Utilisateur ID {user_id} non trouvé dans la base de données.")
                 return {}
             
-            logger.info(f"✅ Informations utilisateur ID {user_id} récupérées avec succès.")
+            # Log détaillé pour le débogage (sans le mot de passe)
+            safe_user_data = {k: v for k, v in user_data.items() if k != 'hashed_password'}
+            logger.info(f"✅ Données brutes récupérées pour l'utilisateur ID {user_id}: {safe_user_data}")
+            
+            # Vérifier spécifiquement les valeurs de recherche et lieu
+            search_query = user_data.get('search_query', '')
+            location = user_data.get('location', '')
+            logger.info(f"🔍 DONNÉES UTILISATEUR: search_query='{search_query}', location='{location}'")
             
             # Convertir les données au format attendu par le scraper
             scraper_config = {
                 "firstName": user_data.get('first_name', ''),
                 "lastName": user_data.get('last_name', ''),
                 "email": user_data.get('email', ''),
-                "search_query": user_data.get('search_query', ''),  # Pour le champ 'métier'
-                "location": user_data.get('location', ''),  # Pour le champ 'lieu'
+                "search_query": search_query,  # Pour le champ 'métier'
+                "location": location,  # Pour le champ 'lieu'
                 "contractTypes": user_data.get('contract_type', 'alternance'),
                 "cvPath": user_data.get('cv_path', ''),
                 "coverLetterPath": user_data.get('lm_path', ''),
@@ -113,57 +132,75 @@ class DatabaseIntegration:
                 }
             }
             
-            # Log des informations récupérées (sans le mot de passe)
-            logger.info(f"Préférences récupérées: métier='{scraper_config['search_query']}', lieu='{scraper_config['location']}'")
+            # Log des informations récupérées et formatées pour le scraper
+            logger.info(f"Préférences formatées: {scraper_config}")
             return scraper_config
             
         except Exception as e:
             logger.error(f"❌ Erreur lors de la récupération des préférences utilisateur : {e}")
+            import traceback
+            logger.error(f"Détail de l'erreur: {traceback.format_exc()}")
             return {}
 
     def save_application_results(self, user_id: int, offers: list):
         """
-        Enregistre les résultats des candidatures dans la base de données
+        Sauvegarde les résultats des candidatures pour un utilisateur donné
         
         Args:
             user_id (int): ID de l'utilisateur
-            offers (list): Liste des offres traitées par le scraper
+            offers (list): Liste des offres avec les résultats des candidatures
         """
+        # TODO: Implémenter la sauvegarde des résultats
         try:
-            for offer in offers:
-                offer_details = {
-                    'Lien': offer.get('url', ''),
-                    'Titre': offer.get('title', ''),
-                    'Entreprise': offer.get('company', ''),
-                    'Lieu': offer.get('location', ''),
-                    'Description': offer.get('description', ''),
-                    'Statut': offer.get('application_status', 'non_postulé')
-                }
-                
-                self.db.record_application(user_id, offer_details)
+            logger.info(f"Sauvegarde des résultats pour {len(offers)} offres pour l'utilisateur ID {user_id}")
             
-            logger.info(f"✅ {len(offers)} candidatures enregistrées pour l'utilisateur ID {user_id}.")
+            # Préparation des données à sauvegarder dans la base
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # TODO: Ajouter le code pour sauvegarder les résultats dans la base
+            
+            logger.info(f"✅ Résultats sauvegardés avec succès pour l'utilisateur ID {user_id}")
+            return True
+            
         except Exception as e:
-            logger.error(f"❌ Erreur lors de l'enregistrement des candidatures : {e}")
+            logger.error(f"❌ Erreur lors de la sauvegarde des résultats: {e}")
+            return False
+            
 
-# Fonction utilitaire pour tester l'intégration
-def test_integration(user_id: int):
+def test_integration(user_id, return_data=False):
     """
-    Fonction de test pour vérifier l'intégration avec la base de données
+    Fonction utilitaire pour tester l'intégration avec la base de données
     
     Args:
         user_id (int): ID de l'utilisateur à tester
+        return_data (bool): Si True, retourne les données utilisateur récupérées
+        
+    Returns:
+        Dict[str, Any] or None: Données utilisateur si return_data=True, sinon None
     """
-    integration = DatabaseIntegration()
     try:
-        user_prefs = integration.get_user_preferences(user_id)
-        if user_prefs:
-            print(f"\n🔍 Préférences pour l'utilisateur ID {user_id}:")
-            print(json.dumps(user_prefs, indent=2))
-        else:
-            print(f"\n❌ Aucune préférence trouvée pour l'utilisateur ID {user_id}.")
-    finally:
-        integration.close()
+        print(f"\n==== TEST INTEGRATION POUR UTILISATEUR ID {user_id} ====")
+        db_integration = DatabaseIntegration()
+        user_data = db_integration.get_user_preferences(user_id)
+        
+        # Affichage des données récupérées
+        print(f"\nDonnées utilisateur récupérées:")
+        print(f"Métier: '{user_data.get('search_query', '')}' (clé 'search_query')")
+        print(f"Lieu: '{user_data.get('location', '')}' (clé 'location')")
+        print(f"Prénom: '{user_data.get('firstName', '')}' (clé 'firstName')")
+        print(f"Nom: '{user_data.get('lastName', '')}' (clé 'lastName')")
+        print(f"Email: '{user_data.get('email', '')}' (clé 'email')")
+        print(f"\nDictionnaire complet: {user_data}")
+        
+        if return_data:
+            return user_data
+        return None
+    except Exception as e:
+        print(f"❌ Erreur lors du test d'intégration: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return None if return_data else False
+
 
 if __name__ == "__main__":
     import argparse

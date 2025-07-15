@@ -338,9 +338,26 @@ class AutomationRunner:
                 "captureScreenshots": self.settings.get("captureScreenshots", True),
             }
             
-            logging.info(f"Recherche lancée: {user_data.get('search_query', '')} à {user_data.get('location', '')}")
+            # Logs détaillés pour déboguer la transmission des données utilisateur
+            logging.info(f"---------- DÉMARRAGE DU SCRAPER ----------")
+            logging.info(f"Recherche lancée avec les paramètres suivants:")
+            logging.info(f"Métier: '{user_data.get('search_query', '')}' (clé 'search_query')")
+            logging.info(f"Lieu: '{user_data.get('location', '')}' (clé 'location')")
+            logging.info(f"Prénom: '{user_data.get('firstName', '')}' (clé 'firstName')")
+            logging.info(f"Nom: '{user_data.get('lastName', '')}' (clé 'lastName')")
+            logging.info(f"Email: '{user_data.get('email', '')}' (clé 'email')")
+            logging.info(f"Type de contrat: '{user_data.get('contractTypes', '')}' (clé 'contractTypes')")
+            logging.info(f"Dictionnaire utilisateur complet: {user_data}")
+            
+            # Vérification critique pour s'assurer que les données sont présentes
+            if not user_data.get('search_query') or not user_data.get('location'):
+                error_msg = f"❌ ERREUR CRITIQUE: Données de recherche manquantes - métier: '{user_data.get('search_query', '')}', lieu: '{user_data.get('location', '')}'."
+                logging.error(error_msg)
+                self.send_web_log(error_msg, "error")
+                raise ValueError("Données de recherche obligatoires manquantes (métier ou lieu)")
             
             # Call the scraper with our configuration
+            logging.info(f"Appel à run_scraper avec user_data contenant {len(user_data)} clés...")
             offers = run_scraper(user_data)
             
             # Count applications and report back
@@ -399,14 +416,31 @@ class AutomationRunner:
 def main():
     """Main entrypoint to run from console or as a subprocess"""
     try:
-        # Vérifier si un argument --user-id est passé
+        # Vérifier si un argument user_id est passé dans un des formats possibles
         user_id = None
-        if len(sys.argv) > 1 and sys.argv[1].startswith("--user-id="):
-            try:
-                user_id = int(sys.argv[1].split("=")[1])
-                logging.info(f"User ID spécifié en ligne de commande: {user_id}")
-            except (IndexError, ValueError):
-                logging.error("Format de --user-id invalide")
+        # Chercher dans tous les arguments et supporter différents formats
+        for i, arg in enumerate(sys.argv):
+            # Format --user-id=12 ou --user_id=12
+            if arg.startswith("--user-id=") or arg.startswith("--user_id="):
+                try:
+                    user_id = int(arg.split("=")[1])
+                    logging.info(f"User ID spécifié en ligne de commande (format avec =): {user_id}")
+                    break
+                except (IndexError, ValueError) as e:
+                    logging.error(f"Format avec = invalide: {e}")
+            # Format --user-id 12 ou --user_id 12
+            elif (arg == "--user-id" or arg == "--user_id") and i + 1 < len(sys.argv):
+                try:
+                    user_id = int(sys.argv[i + 1])
+                    logging.info(f"User ID spécifié en ligne de commande (format avec espace): {user_id}")
+                    break
+                except (IndexError, ValueError) as e:
+                    logging.error(f"Format avec espace invalide: {e}")
+        
+        if user_id is not None:
+            logging.info(f"User ID détecté: {user_id}")
+        else:
+            logging.warning("Aucun user_id détecté dans les arguments de la ligne de commande")
                 
         # Get the configuration from stdin
         user_config = {}
