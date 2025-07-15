@@ -593,31 +593,93 @@ def fill_field_with_autocomplete(driver, wait, field_id, value, max_retries=3):
     """Remplit un champ avec autocomplétion dans le modal."""
     logger.info(f"🎡 Remplissage du champ '{field_id}' avec '{value}'")
     
+    if not value or value.strip() == "":
+        logger.warning(f"⚠️ Valeur vide pour le champ '{field_id}'")
+        return False
+    
     # Différentes stratégies de sélecteurs pour trouver le champ dans le modal
     selectors = [
         f"#{field_id}",  # ID direct
-        f"input[placeholder='Indiquez un métier ou une formation']",  # Par placeholder (comme vu dans la capture)
-        ".modal-content input.autocomplete",  # Par structure modale 
+        f"input[id='{field_id}']",  # ID avec input spécifique
+        f"input[name='{field_id}']",  # Par nom
+        f"input[placeholder*='{field_id}']",  # Par placeholder contenant le nom du champ
+        f"input[placeholder*='métier']" if field_id == 'metier' else "",  # Pour métier spécifiquement
+        f"input[placeholder*='lieu']" if field_id == 'lieu' else "",  # Pour lieu spécifiquement
+        f"input[aria-label*='{field_id}']",  # Par aria-label
+        ".modal-content input.autocomplete",  # Par structure modale
         ".modal input[type='text']",  # Tout input text dans un modal
+        "input[type='text']",  # Tout input text
     ]
+    
+    # Filtrer les sélecteurs vides
+    selectors = [s for s in selectors if s]
+    
+    # Prendre un screenshot pour déboguer
+    driver.save_screenshot(f'debug_screenshots/avant_remplissage_{field_id}.png')
     
     for attempt in range(max_retries):
         logger.info(f"🔄 Tentative {attempt + 1}/{max_retries} pour le champ '{field_id}'")
+        
+        # Essayer de trouver le champ directement par JavaScript
+        try:
+            js_script = f"""
+            return {{  
+                byId: document.getElementById('{field_id}'),
+                byName: document.querySelector('input[name="{field_id}"]'),
+                byPlaceholder: document.querySelector('input[placeholder*="{field_id}"]'),
+                allInputs: Array.from(document.querySelectorAll('input[type="text"]')).map(i => ({{id: i.id, name: i.name, placeholder: i.placeholder}}))
+            }};
+            """
+            field_info = driver.execute_script(js_script)
+            logger.info(f"Info champ '{field_id}' via JS: {field_info}")
+        except Exception as e:
+            logger.error(f"Erreur lors de la recherche JS: {str(e)}")
         
         # Tenter chaque sélecteur jusqu'à ce qu'un fonctionne
         input_field = None
         for selector in selectors:
             try:
-                input_field = WebDriverWait(driver, 3).until(
+                input_field = WebDriverWait(driver, 2).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
-                logger.info(f"Champ trouvé avec le sélecteur: {selector}")
+                logger.info(f"Champ '{field_id}' trouvé avec le sélecteur: {selector}")
                 break
-            except:
+            except Exception as e:
                 continue
         
         if not input_field:
-            logger.warning(f"Aucun champ trouvé à la tentative {attempt + 1}")
+            logger.warning(f"Aucun champ '{field_id}' trouvé avec les sélecteurs CSS à la tentative {attempt + 1}")
+            
+            # Essai avec une méthode plus directe en JavaScript
+            try:
+                js_fill = f"""
+                var inputs = document.querySelectorAll('input[type="text"]');
+                for (var i = 0; i < inputs.length; i++) {{
+                    var input = inputs[i];
+                    if (input.id === '{field_id}' || input.name === '{field_id}' || 
+                        (input.placeholder && input.placeholder.toLowerCase().includes('{field_id}')) ||
+                        ('{field_id}' === 'metier' && i === 0) || 
+                        ('{field_id}' === 'lieu' && i === 1)) {{
+                        input.value = '{value}';
+                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        return true;
+                    }}
+                }}
+                return false;
+                """
+                result = driver.execute_script(js_fill)
+                logger.info(f"Remplissage JS direct pour '{field_id}': {result}")
+                if result:
+                    time.sleep(1)
+                    # Simuler appui sur Entrée
+                    active_element = driver.switch_to.active_element
+                    if active_element:
+                        active_element.send_keys(Keys.ENTER)
+                        time.sleep(0.5)
+                    return True
+            except Exception as e:
+                logger.error(f"Erreur lors du remplissage JS direct: {str(e)}")
             continue
             
         try:
@@ -626,30 +688,45 @@ def fill_field_with_autocomplete(driver, wait, field_id, value, max_retries=3):
             driver.execute_script("arguments[0].click();", input_field)
             time.sleep(0.5)
             
-            # Effacer le contenu existant
+            # Effacer le contenu existant par différentes méthodes
             input_field.clear()
             input_field.send_keys(Keys.CONTROL + "a")
             input_field.send_keys(Keys.DELETE)
+            
+            # Vérifier si le champ est vide
+            current_value = input_field.get_attribute('value')
+            if current_value:
+                logger.warning(f"Le champ n'est pas vide après clear(): '{current_value}'. Essai avec JavaScript.")
+                driver.execute_script("arguments[0].value = '';", input_field)
             time.sleep(0.2)
             
-            # Taper le texte caractère par caractère avec délai aléatoire
-            for char in value:
-                input_field.send_keys(char)
-                time.sleep(random.uniform(0.05, 0.15))
-                
-            # Attendre que les suggestions apparaissent
-            time.sleep(1.5)
+            # Remplir la valeur directement
+            input_field.send_keys(value)
+            time.sleep(0.5)
+            
+            # Vérifier si la valeur a été correctement saisie
+            actual_value = input_field.get_attribute('value')
+            logger.info(f"Valeur saisie: '{actual_value}' (attendu: '{value}')")
+            
+            # Simuler un délai de frappe comme un utilisateur réel
+            time.sleep(0.5)
+            
+            # Prendre une capture d'écran après la saisie
+            driver.save_screenshot(f'debug_screenshots/apres_saisie_{field_id}.png')
             
             # Chercher les suggestions avec plusieurs sélecteurs possibles
             if select_suggestion(driver, wait):
-                logger.info(f"✅ Valeur '{value}' saisie et suggestion sélectionnée")
+                logger.info(f"✅ Valeur '{value}' saisie et suggestion sélectionnée pour {field_id}")
                 return True
             else:
                 # Si pas de suggestion, essayer d'appuyer sur Entrée
-                logger.warning("Pas de suggestion trouvée, essai avec la touche Entrée")
+                logger.warning(f"Pas de suggestion trouvée pour '{field_id}', essai avec la touche Entrée")
                 input_field.send_keys(Keys.ENTER)
                 time.sleep(1)
-                return True
+                # Vérifier si la valeur est toujours présente après Entrée
+                actual_value = input_field.get_attribute('value')
+                logger.info(f"Valeur après ENTER: '{actual_value}'")
+                return actual_value == value
                 
         except Exception as e:
             logger.warning(f"Erreur tentative {attempt+1}: {str(e)}")
@@ -1691,20 +1768,99 @@ def run_scraper(user_data):
         except Exception as e:
             logger.error(f"Problème lors de la recherche des champs: {e}")
         
-        # Tentative de remplissage du champ métier
-        if not fill_field_with_autocomplete(driver, wait, 'metier', user_data['search_query']):
-            logger.error("Impossible de remplir le champ métier")
-            raise Exception("Erreur lors de la tentative de soumission du formulaire: Échec du remplissage du champ 'métier'")
-                
-        # Pause entre les champs
-        time.sleep(1.5)
-            
-        # Tentative de remplissage du champ lieu
-        if not fill_field_with_autocomplete(driver, wait, 'lieu', user_data['location']):
-            logger.warning("Impossible de remplir le champ lieu, essai de continuer sans")
-            
-        # Pause avant soumission 
+        # Afficher les données utilisateur reçues pour déboguer
+        logger.info(f"🔍 DONNÉES UTILISATEUR: search_query='{user_data.get('search_query', '')}', location='{user_data.get('location', '')}'")    
+        
+        # Vérifier si la page contient les champs de recherche
+        time.sleep(1)  # Attendre que la page soit complètement chargée
+        
+        # Prendre un screenshot initial pour débogage
+        driver.save_screenshot('debug_screenshots/page_recherche_initiale.png')
+        
+        # Script JS pour vérifier et rendre visibles les champs
+        js_check_fields = """
+        var fields = {
+            metier: document.getElementById('metier'),
+            lieu: document.getElementById('lieu')
+        };
+        
+        // Rendre les champs visibles si nécessaire
+        for (var key in fields) {
+            if (fields[key]) {
+                fields[key].style.display = 'block';
+                fields[key].style.visibility = 'visible';
+            }
+        }
+        
+        return {
+            metierExists: !!fields.metier,
+            lieuExists: !!fields.lieu,
+            metierVisible: fields.metier ? (fields.metier.offsetParent !== null) : false,
+            lieuVisible: fields.lieu ? (fields.lieu.offsetParent !== null) : false
+        };
+        """
+        
+        field_status = driver.execute_script(js_check_fields)
+        logger.info(f"Statut des champs de recherche: {field_status}")
+        
+        # Si la page a bien chargé, essayer de remplir les champs
+        search_query = user_data.get('search_query', '')
+        location = user_data.get('location', '')
+        
+        # Méthode 1: Utiliser notre fonction améliorée de remplissage
+        metier_success = fill_field_with_autocomplete(driver, wait, 'metier', search_query)
+        if not metier_success:
+            logger.error(f"❌ Échec du remplissage du champ métier avec '{search_query}'")
+        else:
+            logger.info(f"✅ Champ métier rempli avec succès: '{search_query}'")
+        
+        # Attendre un peu entre les deux champs
         time.sleep(1)
+        
+        lieu_success = fill_field_with_autocomplete(driver, wait, 'lieu', location)
+        if not lieu_success:
+            logger.error(f"❌ Échec du remplissage du champ lieu avec '{location}'")
+        else:
+            logger.info(f"✅ Champ lieu rempli avec succès: '{location}'")
+            
+        # Méthode 2: Si la méthode 1 échoue, essayer avec JavaScript direct
+        if not (metier_success and lieu_success):
+            logger.warning("Tentative de remplissage direct par JavaScript")
+            js_fill = f"""
+            var success = {{}}
+            
+            // Remplir le champ métier
+            var metierField = document.getElementById('metier');
+            if (metierField) {{
+                metierField.value = "{search_query}";
+                metierField.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                metierField.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                success.metier = true;
+            }} else {{
+                success.metier = false;
+            }}
+            
+            // Remplir le champ lieu
+            var lieuField = document.getElementById('lieu');
+            if (lieuField) {{
+                lieuField.value = "{location}";
+                lieuField.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                lieuField.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                success.lieu = true;
+            }} else {{
+                success.lieu = false;
+            }}
+            
+            return success;
+            """
+            js_result = driver.execute_script(js_fill)
+            logger.info(f"Résultat du remplissage JS direct: {js_result}")
+        
+        # Prendre une capture d'écran après le remplissage direct
+        driver.save_screenshot('debug_screenshots/apres_remplissage_js_direct.png')
+        
+        # Pause avant soumission
+        time.sleep(1.5)
             
         # Étape 4: Soumission du formulaire - multiple sélecteurs et stratégies
         logger.info("Préparation à la soumission du formulaire...")
