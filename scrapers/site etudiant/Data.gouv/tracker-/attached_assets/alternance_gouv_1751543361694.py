@@ -2555,21 +2555,49 @@ def run_scraper(user_data):
                                     # 2. Attendre l'apparition du formulaire modal
                                     logger.info("Attente de l'apparition du formulaire modal...")
                                     wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'section.chakra-modal__content[role="dialog"] form[data-sentry-component="CandidatureLbaModalBody"]')))
-                                    # 3. Remplir les champs obligatoires
-                                    logger.info("Remplissage des champs du formulaire...")
+                                    # 3. Remplir les champs obligatoires avec les données de l'utilisateur
+                                    logger.info("Remplissage des champs du formulaire avec les données utilisateur...")
+                                    
+                                    # Récupération des informations utilisateur
+                                    lastName = user_data.get('lastName', 'Nom')
+                                    firstName = user_data.get('firstName', 'Prénom')
+                                    email = user_data.get('email', '')
+                                    phone = user_data.get('phone', '0600000000')  # Numéro par défaut
+                                    
+                                    logger.info(f"Utilisation des données utilisateur: {firstName} {lastName}, {email}")
+                                    
                                     driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').send_keys("DUPONT")
+                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').send_keys(lastName)
                                     driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').send_keys("Jean")
+                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').send_keys(firstName)
                                     driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').send_keys("silasiharis@gmail.com")
+                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').send_keys(email)
                                     driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').send_keys("0601020304")
+                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').send_keys(phone)
+                                    # Message de motivation basé sur la lettre de motivation ou message par défaut
+                                    message = "Je suis très motivé par cette alternance."
+                                    
+                                    # Si une lettre de motivation est disponible, essayer de l'utiliser
+                                    lm_path = user_data.get('coverLetterPath', '')
+                                    if lm_path and os.path.exists(lm_path) and os.path.getsize(lm_path) > 0:
+                                        try:
+                                            # Tenter de lire le contenu de la LM (s'il s'agit d'un fichier texte)
+                                            if lm_path.endswith('.txt'):
+                                                with open(lm_path, 'r', encoding='utf-8') as f:
+                                                    lm_content = f.read()
+                                                    # Limiter la taille du message
+                                                    message = lm_content[:500] + '...' if len(lm_content) > 500 else lm_content
+                                                    logger.info("Lettre de motivation importée avec succès")
+                                        except Exception as e:
+                                            logger.warning(f"Impossible de lire la lettre de motivation: {e}")
+                                    
+                                    logger.info("Remplissage du message de motivation")
                                     driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').send_keys("Je suis très motivé par cette alternance.")
-                                    # 4. Upload du CV (s'assurer que le fichier n'est pas vide !)
-                                    cv_path = "/Users/davidravin/Desktop/floup.pdf"  # CV réel de l'utilisateur
-                                    if not os.path.exists(cv_path) or os.path.getsize(cv_path) == 0:
+                                    driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').send_keys(message)
+                                    # 4. Upload du CV de l'utilisateur depuis ses préférences
+                                    cv_path = user_data.get('cvPath', '')
+                                    logger.info(f"Utilisation du CV de l'utilisateur: {cv_path}")
+                                    if not cv_path or not os.path.exists(cv_path) or os.path.getsize(cv_path) == 0:
                                         logger.error("Le fichier CV est manquant ou vide, annulation de la candidature.")
                                         driver.save_screenshot("debug_screenshots/cv_missing_or_empty.png")
                                         driver.close()
