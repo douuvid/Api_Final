@@ -1243,6 +1243,15 @@ logger.info("Fin de la tentative de sélection des suggestions")
 
 def run_scraper(user_data):
     logger.info(f"Lancement du scraper pour : {user_data['email']}")
+    
+    # Initialisation des compteurs
+    compteurs = {
+        "offres_trouvees": 0,
+        "offres_postulees": 0,
+        "offres_redirigees": 0
+    }
+    logger.info("🔢 Initialisation des compteurs de suivi des offres")
+    
     driver = None
     try:
         # Créer le WebDriver avec ouverture auto des DevTools
@@ -2519,6 +2528,10 @@ def run_scraper(user_data):
                                 current_url = driver.current_url
                                 if any(domain in current_url for domain in external_domains):
                                     logger.info(f"Redirection externe détectée ({current_url}), on passe à l'offre suivante via le bouton 'next'.")
+                                    compteurs["offres_redirigees"] += 1
+                                    job_offer["postulation_status"] = "redirection_externe"
+                                    job_offer["redirection_url"] = current_url
+                                    
                                     if driver.current_window_handle != main_handle:
                                         driver.close()
                                         driver.switch_to.window(main_handle)
@@ -2581,6 +2594,9 @@ def run_scraper(user_data):
                                     time.sleep(7)
                                     final_btn.click()
                                     logger.info("Candidature envoyée avec succès.")
+                                    # Mettre à jour le compteur et le statut
+                                    compteurs["offres_postulees"] += 1
+                                    job_offer["postulation_status"] = "postulé"
                                       # Pause pour laisser le site traiter la soumission
                                     time.sleep(15)
                                     driver.close()
@@ -2592,6 +2608,7 @@ def run_scraper(user_data):
                             switch_to_iframe_if_needed(driver)
                         
                         job_offers.append(job_offer)
+                        compteurs["offres_trouvees"] += 1
                         logger.info(f"Offre {index+1} ajoutée: {title} chez {company} à {location} ({offer_type}) - Statut postulation: {job_offer['postulation_status']}")
                         
                     except Exception as e:
@@ -2628,6 +2645,16 @@ def run_scraper(user_data):
         if driver:
             driver.quit()
             logger.info("WebDriver fermé.")
+        
+        # Affichage du récapitulatif des compteurs
+        logger.info("\n" + "="*50)
+        logger.info("📊 STATISTIQUES DU SCRAPING:")
+        logger.info(f"🔍 Offres trouvées: {compteurs['offres_trouvees']}")
+        logger.info(f"✅ Candidatures envoyées: {compteurs['offres_postulees']}")
+        logger.info(f"🔗 Redirections externes: {compteurs['offres_redirigees']}")
+        logger.info("="*50)
+        
+        return job_offers
 
 def parse_results(html_content):
     """Parse la page de résultats pour en extraire les offres."""
@@ -2701,6 +2728,12 @@ def main():
     user_data = {'email': user_email, 'search_query': 'Commercial', 'location': 'Lyon'}
 
     if user_data:
+        compteurs = {
+            "offres_trouvees": 0,
+            "offres_postulees": 0,
+            "offres_redirigees": 0
+        }
+        logger.info("🔢 Initialisation des compteurs de suivi des offres")
         run_scraper(user_data)
     else:
         logger.error(f"Aucune donnée utilisateur disponible pour lancer le scraper.")
