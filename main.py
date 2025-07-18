@@ -58,6 +58,7 @@ class UserRegistration(BaseModel):
     password: str
     first_name: str
     last_name: str
+    phone: Optional[str] = None
     search_query: Optional[str] = None
     contract_type: Optional[str] = None
     location: Optional[str] = None
@@ -132,6 +133,7 @@ def register_user(user_data: UserRegistration, db: UserDatabase = Depends(get_db
             "email": user_data.email,
             "first_name": user_data.first_name,
             "last_name": user_data.last_name,
+            "phone": user_data.phone,  # Ajout du champ téléphone
             "search_query": user_data.search_query,
             "contract_type": user_data.contract_type,
             "location": user_data.location

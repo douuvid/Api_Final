@@ -105,8 +105,12 @@ class UserDatabase:
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS cv_path VARCHAR(255);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS lm_path VARCHAR(255);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS search_query VARCHAR(255);")
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);")
+        logger.info("Ajout de la colonne 'phone' pour stocker les numéros de téléphone des utilisateurs")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS contract_type VARCHAR(100);")
         self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);")
+        self._execute_query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);")
+        logger.info("Ajout de la colonne 'phone' si elle n'existe pas déjà...")
         logger.info("✅ Table 'users' prête et à jour.")
 
         # --- Gestion de la table 'job_applications' ---
@@ -143,8 +147,8 @@ class UserDatabase:
     def create_user(self, user_data: dict, hashed_password: str):
         """Crée un nouvel utilisateur."""
         query = """
-        INSERT INTO users (email, hashed_password, first_name, last_name, search_query, contract_type, location)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO users (email, hashed_password, first_name, last_name, phone, search_query, contract_type, location)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING *;
         """
         params = (
@@ -152,6 +156,7 @@ class UserDatabase:
             hashed_password,
             user_data['first_name'],
             user_data['last_name'],
+            user_data.get('phone', ''),  # Utilisation d'une chaîne vide par défaut si le téléphone est absent
             user_data.get('search_query'),
             user_data.get('contract_type'),
             user_data.get('location')

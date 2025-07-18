@@ -35,7 +35,7 @@ export default {
         params.append('username', this.email);
         params.append('password', this.password);
 
-        const response = await axios.post('http://localhost:8080/login', params, {
+        const response = await axios.post('http://localhost:8000/login', params, {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
           }

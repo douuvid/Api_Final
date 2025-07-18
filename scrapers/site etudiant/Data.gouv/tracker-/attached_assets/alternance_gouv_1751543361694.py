@@ -593,93 +593,31 @@ def fill_field_with_autocomplete(driver, wait, field_id, value, max_retries=3):
     """Remplit un champ avec autocomplétion dans le modal."""
     logger.info(f"🎡 Remplissage du champ '{field_id}' avec '{value}'")
     
-    if not value or value.strip() == "":
-        logger.warning(f"⚠️ Valeur vide pour le champ '{field_id}'")
-        return False
-    
     # Différentes stratégies de sélecteurs pour trouver le champ dans le modal
     selectors = [
         f"#{field_id}",  # ID direct
-        f"input[id='{field_id}']",  # ID avec input spécifique
-        f"input[name='{field_id}']",  # Par nom
-        f"input[placeholder*='{field_id}']",  # Par placeholder contenant le nom du champ
-        f"input[placeholder*='métier']" if field_id == 'metier' else "",  # Pour métier spécifiquement
-        f"input[placeholder*='lieu']" if field_id == 'lieu' else "",  # Pour lieu spécifiquement
-        f"input[aria-label*='{field_id}']",  # Par aria-label
-        ".modal-content input.autocomplete",  # Par structure modale
+        f"input[placeholder='Indiquez un métier ou une formation']",  # Par placeholder (comme vu dans la capture)
+        ".modal-content input.autocomplete",  # Par structure modale 
         ".modal input[type='text']",  # Tout input text dans un modal
-        "input[type='text']",  # Tout input text
     ]
-    
-    # Filtrer les sélecteurs vides
-    selectors = [s for s in selectors if s]
-    
-    # Prendre un screenshot pour déboguer
-    driver.save_screenshot(f'debug_screenshots/avant_remplissage_{field_id}.png')
     
     for attempt in range(max_retries):
         logger.info(f"🔄 Tentative {attempt + 1}/{max_retries} pour le champ '{field_id}'")
-        
-        # Essayer de trouver le champ directement par JavaScript
-        try:
-            js_script = f"""
-            return {{  
-                byId: document.getElementById('{field_id}'),
-                byName: document.querySelector('input[name="{field_id}"]'),
-                byPlaceholder: document.querySelector('input[placeholder*="{field_id}"]'),
-                allInputs: Array.from(document.querySelectorAll('input[type="text"]')).map(i => ({{id: i.id, name: i.name, placeholder: i.placeholder}}))
-            }};
-            """
-            field_info = driver.execute_script(js_script)
-            logger.info(f"Info champ '{field_id}' via JS: {field_info}")
-        except Exception as e:
-            logger.error(f"Erreur lors de la recherche JS: {str(e)}")
         
         # Tenter chaque sélecteur jusqu'à ce qu'un fonctionne
         input_field = None
         for selector in selectors:
             try:
-                input_field = WebDriverWait(driver, 2).until(
+                input_field = WebDriverWait(driver, 3).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
-                logger.info(f"Champ '{field_id}' trouvé avec le sélecteur: {selector}")
+                logger.info(f"Champ trouvé avec le sélecteur: {selector}")
                 break
-            except Exception as e:
+            except:
                 continue
         
         if not input_field:
-            logger.warning(f"Aucun champ '{field_id}' trouvé avec les sélecteurs CSS à la tentative {attempt + 1}")
-            
-            # Essai avec une méthode plus directe en JavaScript
-            try:
-                js_fill = f"""
-                var inputs = document.querySelectorAll('input[type="text"]');
-                for (var i = 0; i < inputs.length; i++) {{
-                    var input = inputs[i];
-                    if (input.id === '{field_id}' || input.name === '{field_id}' || 
-                        (input.placeholder && input.placeholder.toLowerCase().includes('{field_id}')) ||
-                        ('{field_id}' === 'metier' && i === 0) || 
-                        ('{field_id}' === 'lieu' && i === 1)) {{
-                        input.value = '{value}';
-                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        return true;
-                    }}
-                }}
-                return false;
-                """
-                result = driver.execute_script(js_fill)
-                logger.info(f"Remplissage JS direct pour '{field_id}': {result}")
-                if result:
-                    time.sleep(1)
-                    # Simuler appui sur Entrée
-                    active_element = driver.switch_to.active_element
-                    if active_element:
-                        active_element.send_keys(Keys.ENTER)
-                        time.sleep(0.5)
-                    return True
-            except Exception as e:
-                logger.error(f"Erreur lors du remplissage JS direct: {str(e)}")
+            logger.warning(f"Aucun champ trouvé à la tentative {attempt + 1}")
             continue
             
         try:
@@ -688,45 +626,30 @@ def fill_field_with_autocomplete(driver, wait, field_id, value, max_retries=3):
             driver.execute_script("arguments[0].click();", input_field)
             time.sleep(0.5)
             
-            # Effacer le contenu existant par différentes méthodes
+            # Effacer le contenu existant
             input_field.clear()
             input_field.send_keys(Keys.CONTROL + "a")
             input_field.send_keys(Keys.DELETE)
-            
-            # Vérifier si le champ est vide
-            current_value = input_field.get_attribute('value')
-            if current_value:
-                logger.warning(f"Le champ n'est pas vide après clear(): '{current_value}'. Essai avec JavaScript.")
-                driver.execute_script("arguments[0].value = '';", input_field)
             time.sleep(0.2)
             
-            # Remplir la valeur directement
-            input_field.send_keys(value)
-            time.sleep(0.5)
-            
-            # Vérifier si la valeur a été correctement saisie
-            actual_value = input_field.get_attribute('value')
-            logger.info(f"Valeur saisie: '{actual_value}' (attendu: '{value}')")
-            
-            # Simuler un délai de frappe comme un utilisateur réel
-            time.sleep(0.5)
-            
-            # Prendre une capture d'écran après la saisie
-            driver.save_screenshot(f'debug_screenshots/apres_saisie_{field_id}.png')
+            # Taper le texte caractère par caractère avec délai aléatoire
+            for char in value:
+                input_field.send_keys(char)
+                time.sleep(random.uniform(0.05, 0.15))
+                
+            # Attendre que les suggestions apparaissent
+            time.sleep(1.5)
             
             # Chercher les suggestions avec plusieurs sélecteurs possibles
             if select_suggestion(driver, wait):
-                logger.info(f"✅ Valeur '{value}' saisie et suggestion sélectionnée pour {field_id}")
+                logger.info(f"✅ Valeur '{value}' saisie et suggestion sélectionnée")
                 return True
             else:
                 # Si pas de suggestion, essayer d'appuyer sur Entrée
-                logger.warning(f"Pas de suggestion trouvée pour '{field_id}', essai avec la touche Entrée")
+                logger.warning("Pas de suggestion trouvée, essai avec la touche Entrée")
                 input_field.send_keys(Keys.ENTER)
                 time.sleep(1)
-                # Vérifier si la valeur est toujours présente après Entrée
-                actual_value = input_field.get_attribute('value')
-                logger.info(f"Valeur après ENTER: '{actual_value}'")
-                return actual_value == value
+                return True
                 
         except Exception as e:
             logger.warning(f"Erreur tentative {attempt+1}: {str(e)}")
@@ -1243,15 +1166,6 @@ logger.info("Fin de la tentative de sélection des suggestions")
 
 def run_scraper(user_data):
     logger.info(f"Lancement du scraper pour : {user_data['email']}")
-    
-    # Initialisation des compteurs
-    compteurs = {
-        "offres_trouvees": 0,
-        "offres_postulees": 0,
-        "offres_redirigees": 0
-    }
-    logger.info("🔢 Initialisation des compteurs de suivi des offres")
-    
     driver = None
     try:
         # Créer le WebDriver avec ouverture auto des DevTools
@@ -1777,99 +1691,20 @@ def run_scraper(user_data):
         except Exception as e:
             logger.error(f"Problème lors de la recherche des champs: {e}")
         
-        # Afficher les données utilisateur reçues pour déboguer
-        logger.info(f"🔍 DONNÉES UTILISATEUR: search_query='{user_data.get('search_query', '')}', location='{user_data.get('location', '')}'")    
-        
-        # Vérifier si la page contient les champs de recherche
-        time.sleep(1)  # Attendre que la page soit complètement chargée
-        
-        # Prendre un screenshot initial pour débogage
-        driver.save_screenshot('debug_screenshots/page_recherche_initiale.png')
-        
-        # Script JS pour vérifier et rendre visibles les champs
-        js_check_fields = """
-        var fields = {
-            metier: document.getElementById('metier'),
-            lieu: document.getElementById('lieu')
-        };
-        
-        // Rendre les champs visibles si nécessaire
-        for (var key in fields) {
-            if (fields[key]) {
-                fields[key].style.display = 'block';
-                fields[key].style.visibility = 'visible';
-            }
-        }
-        
-        return {
-            metierExists: !!fields.metier,
-            lieuExists: !!fields.lieu,
-            metierVisible: fields.metier ? (fields.metier.offsetParent !== null) : false,
-            lieuVisible: fields.lieu ? (fields.lieu.offsetParent !== null) : false
-        };
-        """
-        
-        field_status = driver.execute_script(js_check_fields)
-        logger.info(f"Statut des champs de recherche: {field_status}")
-        
-        # Si la page a bien chargé, essayer de remplir les champs
-        search_query = user_data.get('search_query', '')
-        location = user_data.get('location', '')
-        
-        # Méthode 1: Utiliser notre fonction améliorée de remplissage
-        metier_success = fill_field_with_autocomplete(driver, wait, 'metier', search_query)
-        if not metier_success:
-            logger.error(f"❌ Échec du remplissage du champ métier avec '{search_query}'")
-        else:
-            logger.info(f"✅ Champ métier rempli avec succès: '{search_query}'")
-        
-        # Attendre un peu entre les deux champs
-        time.sleep(1)
-        
-        lieu_success = fill_field_with_autocomplete(driver, wait, 'lieu', location)
-        if not lieu_success:
-            logger.error(f"❌ Échec du remplissage du champ lieu avec '{location}'")
-        else:
-            logger.info(f"✅ Champ lieu rempli avec succès: '{location}'")
-            
-        # Méthode 2: Si la méthode 1 échoue, essayer avec JavaScript direct
-        if not (metier_success and lieu_success):
-            logger.warning("Tentative de remplissage direct par JavaScript")
-            js_fill = f"""
-            var success = {{}}
-            
-            // Remplir le champ métier
-            var metierField = document.getElementById('metier');
-            if (metierField) {{
-                metierField.value = "{search_query}";
-                metierField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                metierField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                success.metier = true;
-            }} else {{
-                success.metier = false;
-            }}
-            
-            // Remplir le champ lieu
-            var lieuField = document.getElementById('lieu');
-            if (lieuField) {{
-                lieuField.value = "{location}";
-                lieuField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                lieuField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                success.lieu = true;
-            }} else {{
-                success.lieu = false;
-            }}
-            
-            return success;
-            """
-            js_result = driver.execute_script(js_fill)
-            logger.info(f"Résultat du remplissage JS direct: {js_result}")
-        
-        # Prendre une capture d'écran après le remplissage direct
-        driver.save_screenshot('debug_screenshots/apres_remplissage_js_direct.png')
-        
-        # Pause avant soumission
+        # Tentative de remplissage du champ métier
+        if not fill_field_with_autocomplete(driver, wait, 'metier', user_data['search_query']):
+            logger.error("Impossible de remplir le champ métier")
+            raise Exception("Erreur lors de la tentative de soumission du formulaire: Échec du remplissage du champ 'métier'")
+                
+        # Pause entre les champs
         time.sleep(1.5)
+            
+        # Tentative de remplissage du champ lieu
+        if not fill_field_with_autocomplete(driver, wait, 'lieu', user_data['location']):
+            logger.warning("Impossible de remplir le champ lieu, essai de continuer sans")
+            
+        # Pause avant soumission 
+        time.sleep(1)
             
         # Étape 4: Soumission du formulaire - multiple sélecteurs et stratégies
         logger.info("Préparation à la soumission du formulaire...")
@@ -2528,10 +2363,6 @@ def run_scraper(user_data):
                                 current_url = driver.current_url
                                 if any(domain in current_url for domain in external_domains):
                                     logger.info(f"Redirection externe détectée ({current_url}), on passe à l'offre suivante via le bouton 'next'.")
-                                    compteurs["offres_redirigees"] += 1
-                                    job_offer["postulation_status"] = "redirection_externe"
-                                    job_offer["redirection_url"] = current_url
-                                    
                                     if driver.current_window_handle != main_handle:
                                         driver.close()
                                         driver.switch_to.window(main_handle)
@@ -2555,20 +2386,62 @@ def run_scraper(user_data):
                                     # 2. Attendre l'apparition du formulaire modal
                                     logger.info("Attente de l'apparition du formulaire modal...")
                                     wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'section.chakra-modal__content[role="dialog"] form[data-sentry-component="CandidatureLbaModalBody"]')))
-                                    # 3. Remplir les champs obligatoires
-                                    logger.info("Remplissage des champs du formulaire...")
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').send_keys("DUPONT")
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').send_keys("Jean")
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').send_keys("silasiharis@gmail.com")
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').send_keys("0601020304")
-                                    driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').clear()
-                                    driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').send_keys("Je suis très motivé par cette alternance.")
-                                    # 4. Upload du CV (s'assurer que le fichier n'est pas vide !)
-                                    cv_path = "/Users/davidravin/Desktop/floup.pdf"  # CV réel de l'utilisateur
+                                    # 3. Remplir le formulaire modal avec les données de l'utilisateur
+                                    logger.info("Remplissage du formulaire de candidature avec les données utilisateur...")
+                                    
+                                    # Récupérer les informations personnelles de l'utilisateur avec gestion des différentes clés possibles
+                                    first_name = user_data.get('firstName', user_data.get('first_name', 'John'))
+                                    last_name = user_data.get('lastName', user_data.get('last_name', 'Doe'))
+                                    email = user_data.get('email', 'user@example.com')
+                                    phone = user_data.get('phone', user_data.get('phoneNumber', '0601020304'))
+                                    message = user_data.get('message', user_data.get('coverLetterText', 'Je suis très motivé par cette alternance.'))
+                                    
+                                    logger.info(f"Utilisation des données utilisateur: {first_name} {last_name}, {email}, {phone}")
+                                    
+                                    # Remplissage des champs avec gestion d'erreurs
+                                    try:
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').clear()
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="firstName"]').send_keys(first_name)
+                                        
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').clear()
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="lastName"]').send_keys(last_name)
+                                        
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').clear()
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="email"]').send_keys(email)
+                                        
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').clear()
+                                        driver.find_element(By.CSS_SELECTOR, 'input[data-testid="phone"]').send_keys(phone)
+                                        
+                                        driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').clear()
+                                        driver.find_element(By.CSS_SELECTOR, 'textarea[data-testid="message"]').send_keys(message)
+                                        
+                                        logger.info("Formulaire rempli avec succès.")
+                                    except Exception as e:
+                                        logger.error(f"Erreur lors du remplissage des champs: {str(e)}")
+                                        driver.save_screenshot(f"debug_screenshots/erreur_remplissage_{int(time.time())}.png")
+                                    # 4. Upload du CV depuis les données utilisateur
+                                    # Récupérer le chemin du CV des données utilisateur avec gestion des différentes clés possibles
+                                    cv_path = None
+                                    cv_keys = ['cv_path', 'cvPath', 'resume_path', 'resumePath', 'cv']
+                                    
+                                    for key in cv_keys:
+                                        if key in user_data and user_data[key]:
+                                            cv_path = user_data[key]
+                                            logger.info(f"Chemin CV trouvé dans les données utilisateur avec la clé '{key}': {cv_path}")
+                                            break
+                                    
+                                    # Si aucun chemin n'est trouvé dans les données utilisateur, utiliser le chemin par défaut
+                                    if not cv_path:
+                                        cv_path = "/Users/davidravin/Desktop/floup.pdf"  # Chemin par défaut comme fallback
+                                        logger.warning(f"Aucun chemin CV trouvé dans les données utilisateur, utilisation du chemin par défaut: {cv_path}")
+                                    
+                                    # Si le chemin est relatif, le convertir en absolu
+                                    if not os.path.isabs(cv_path):
+                                        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                                        cv_path = os.path.join(base_dir, cv_path)
+                                        logger.info(f"Chemin CV converti en absolu: {cv_path}")
+                                    
+                                    logger.info(f"Tentative d'upload du CV depuis: {cv_path}")
                                     if not os.path.exists(cv_path) or os.path.getsize(cv_path) == 0:
                                         logger.error("Le fichier CV est manquant ou vide, annulation de la candidature.")
                                         driver.save_screenshot("debug_screenshots/cv_missing_or_empty.png")
@@ -2594,9 +2467,6 @@ def run_scraper(user_data):
                                     time.sleep(7)
                                     final_btn.click()
                                     logger.info("Candidature envoyée avec succès.")
-                                    # Mettre à jour le compteur et le statut
-                                    compteurs["offres_postulees"] += 1
-                                    job_offer["postulation_status"] = "postulé"
                                       # Pause pour laisser le site traiter la soumission
                                     time.sleep(15)
                                     driver.close()
@@ -2608,7 +2478,6 @@ def run_scraper(user_data):
                             switch_to_iframe_if_needed(driver)
                         
                         job_offers.append(job_offer)
-                        compteurs["offres_trouvees"] += 1
                         logger.info(f"Offre {index+1} ajoutée: {title} chez {company} à {location} ({offer_type}) - Statut postulation: {job_offer['postulation_status']}")
                         
                     except Exception as e:
@@ -2645,16 +2514,6 @@ def run_scraper(user_data):
         if driver:
             driver.quit()
             logger.info("WebDriver fermé.")
-        
-        # Affichage du récapitulatif des compteurs
-        logger.info("\n" + "="*50)
-        logger.info("📊 STATISTIQUES DU SCRAPING:")
-        logger.info(f"🔍 Offres trouvées: {compteurs['offres_trouvees']}")
-        logger.info(f"✅ Candidatures envoyées: {compteurs['offres_postulees']}")
-        logger.info(f"🔗 Redirections externes: {compteurs['offres_redirigees']}")
-        logger.info("="*50)
-        
-        return job_offers
 
 def parse_results(html_content):
     """Parse la page de résultats pour en extraire les offres."""
@@ -2728,12 +2587,6 @@ def main():
     user_data = {'email': user_email, 'search_query': 'Commercial', 'location': 'Lyon'}
 
     if user_data:
-        compteurs = {
-            "offres_trouvees": 0,
-            "offres_postulees": 0,
-            "offres_redirigees": 0
-        }
-        logger.info("🔢 Initialisation des compteurs de suivi des offres")
         run_scraper(user_data)
     else:
         logger.error(f"Aucune donnée utilisateur disponible pour lancer le scraper.")

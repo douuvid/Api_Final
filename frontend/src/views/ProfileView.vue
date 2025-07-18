@@ -115,7 +115,7 @@ export default {
         return;
       }
       try {
-        const response = await axios.get('http://localhost:8080/users/me', {
+        const response = await axios.get('http://localhost:8000/users/me', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         this.user = response.data;
@@ -152,7 +152,7 @@ export default {
 
       const token = localStorage.getItem('access_token');
       try {
-        await axios.post('http://localhost:8080/users/me/upload-document', formData, {
+        await axios.post('http://localhost:8000/users/me/upload-document', formData, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'multipart/form-data'
@@ -176,7 +176,7 @@ export default {
       this.preferencesError = '';
       const token = localStorage.getItem('access_token');
       try {
-        const response = await axios.put('http://localhost:8080/users/me/preferences', this.preferencesForm, {
+        const response = await axios.put('http://localhost:8000/users/me/preferences', this.preferencesForm, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         this.preferencesMessage = response.data.message || 'Préférences mises à jour avec succès !';

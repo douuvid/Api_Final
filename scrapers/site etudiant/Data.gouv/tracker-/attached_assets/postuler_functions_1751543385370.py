@@ -541,34 +541,24 @@ def remplir_formulaire_candidature(driver, user_data, titre_offre):
         driver.save_screenshot(f"debug_screenshots/erreur_remplissage_{titre_offre.replace(' ', '_')}.png")
         return {"status": "echec", "raison": str(e)}
 
+def postuler_offre(driver, url_offre, titre_offre, user_data=None):
     """Ouvre l'offre et postule en remplissant le formulaire"""
     try:
         # Log détaillé
         logger.info(f"=== DÉBUT POSTULATION pour: {titre_offre} - {url_offre} ===") 
-        
         # Ouvrir l'URL dans un nouvel onglet
-        logger.info("Ouverture de l'offre dans un nouvel onglet...")
         driver.execute_script(f"window.open('{url_offre}', '_blank');")
         
         # Basculer vers le nouvel onglet
         driver.switch_to.window(driver.window_handles[-1])
         
-        # Attendre que la page se charge avec des temps d'attente plus longs
-        logger.info("Attente du chargement complet de la page (8 secondes)...")
-        time.sleep(8)  # Augmentation à 8 secondes comme demandé
-        
-        # Attendre que le document soit complètement chargé
-        logger.info("Vérification de l'état de chargement de la page...")
-        WebDriverWait(driver, 15).until(
-            lambda d: d.execute_script('return document.readyState') == 'complete'
-        )
-        logger.info("✅ Page de l'offre chargée avec succès")
+        # Attendre que la page soit chargée
+        wait = WebDriverWait(driver, 15)
         
         # --- AJOUT : Clic robuste sur le bouton 'J\'envoie ma candidature' (data-testid='postuler-button') ---
         
         try:
             print("Recherche du bouton 'J'envoie ma candidature' (data-testid='postuler-button')...")
-            postuler_btn = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-testid='postuler-button']")))
             postuler_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-testid='postuler-button']")))
             driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", postuler_btn)
             time.sleep(0.5)
