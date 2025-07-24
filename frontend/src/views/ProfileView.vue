@@ -9,7 +9,11 @@
       <p><strong>Lettre de motivation:</strong> {{ user.lm_path ? getFilename(user.lm_path) : 'Aucune lettre de motivation téléversée' }}</p>
     </div>
     <div v-else>
-      <p>Chargement des informations...</p>
+      <p><strong>Statut:</strong> Chargement des informations...</p>
+      <div v-if="preferencesError" class="error-panel">
+        <p><strong>Erreur de connexion:</strong> {{ preferencesError }}</p>
+        <p><em>Diagnostic:</em> Vérification de l'authentification en cours...</p>
+      </div>
     </div>
 
     <hr class="separator">
@@ -110,6 +114,8 @@ export default {
   methods: {
     async fetchUserProfile() {
       const token = localStorage.getItem('access_token');
+      // Afficher le token pour débogage
+      this.preferencesError = token ? `Token trouvé: ${token.substring(0, 15)}...` : 'Token absent';
       if (!token) {
         this.$router.push('/login');
         return;
@@ -125,7 +131,10 @@ export default {
         this.preferencesForm.location = this.user.location || 'Toute la France';
       } catch (error) {
         console.error('Erreur de récupération du profil:', error);
-        this.logout(); // Logout if token is invalid or expired
+        // Afficher le détail de l'erreur au lieu de déconnecter automatiquement
+        this.preferencesError = `Erreur: ${error.response?.data?.detail || error.message || 'Problème de connexion au serveur'}`;
+        // Ne pas déconnecter automatiquement pour voir le problème
+        // this.logout(); // Commenté pour éviter déconnexion auto
       }
     },
     onFileSelected(event, docType) {

@@ -147,7 +147,7 @@ class UserDatabase:
     def create_user(self, user_data: dict, hashed_password: str):
         """Crée un nouvel utilisateur."""
         query = """
-        INSERT INTO users (email, hashed_password, first_name, last_name, phone, search_query, contract_type, location)
+        INSERT INTO users (email, password_hash, first_name, last_name, phone, search_query, contract_type, location)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING *;
         """
@@ -163,7 +163,7 @@ class UserDatabase:
         )
         return self._execute_query(query, params, fetch='one')
 
-    def update_user_document_paths(self, user_id: int, cv_path: str = None, lm_path: str = None):
+    def update_user_document_paths(self, user_id: str, cv_path: str = None, lm_path: str = None):
         """Met à jour les chemins des documents pour un utilisateur."""
         updates = []
         params = []

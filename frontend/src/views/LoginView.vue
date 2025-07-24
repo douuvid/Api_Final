@@ -43,7 +43,7 @@ export default {
         
         localStorage.setItem('access_token', response.data.access_token);
         this.message = 'Connexion réussie ! Redirection...';
-        this.$router.push('/profile');
+        this.$router.push('/profile'); // Redirection automatique vers le profil après connexion
 
       } catch (error) {
         if (error.response && error.response.data && error.response.data.detail) {
