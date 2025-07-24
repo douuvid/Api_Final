@@ -68,6 +68,36 @@
         :offer="offer"
       />
     </div>
+    <!-- SECTION MES CANDIDATURES IQUESTA -->
+    <div class="candidatures-section" v-if="applications && applications.length">
+      <h2>Mes candidatures</h2>
+      <div class="candidature-card" v-for="(app, idx) in applications" :key="app.offer_url">
+        <div class="candidature-header">
+          <span class="dot"></span>
+          <span class="job-title">{{ app.title }}</span> -
+          <span class="company">{{ app.company }}</span>
+          <span class="location">({{ app.location }})</span>
+        </div>
+        <div class="candidature-status">
+          Statut : <span :class="statusClass(app.status)">{{ app.status }}</span> - {{ formatDate(app.applied_at) }}
+        </div>
+        <div class="candidature-actions">
+          <button @click="showDetails(app)">Détails</button>
+          <a :href="app.offer_url" target="_blank" rel="noopener noreferrer">Voir l'offre</a>
+        </div>
+      </div>
+      <!-- Modal détails -->
+      <div v-if="modalApp" class="modal-overlay" @click.self="modalApp = null">
+        <div class="modal-content">
+          <h3>{{ modalApp.title }} - {{ modalApp.company }}</h3>
+          <p><strong>Lieu :</strong> {{ modalApp.location }}</p>
+          <p><strong>Description :</strong></p>
+          <pre>{{ modalApp.description }}</pre>
+          <p><a :href="modalApp.offer_url" target="_blank">Voir l'offre</a></p>
+          <button @click="modalApp = null">Fermer</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -96,9 +126,40 @@ export default {
       scrapingLogs: [],
       totalOffers: 0,
       currentProgress: 0,
+      // --- Pour les candidatures iQuesta ---
+      applications: [],
+      modalApp: null,
     };
   },
   methods: {
+    async fetchApplications() {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        const response = await axios.get('http://localhost:8000/users/me/applications', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        this.applications = response.data;
+      } catch (e) {
+        this.applications = [];
+      }
+    },
+    showDetails(app) {
+      this.modalApp = app;
+    },
+    formatDate(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    },
+    statusClass(status) {
+      switch ((status||'').toLowerCase()) {
+        case 'candidature envoyée': return 'statut-envoye';
+        case 'déjà postulé': return 'statut-deja';
+        case 'échec candidature': return 'statut-echec';
+        default: return 'statut-autre';
+      }
+    },
     async lancerScrapingAutomatique() {
       if (!this.identifiant || !this.mot_de_passe || !this.keywords || !this.location) {
         this.scrapingError = 'Veuillez remplir les mots-clés, la localisation et vos identifiants.';
@@ -187,8 +248,113 @@ export default {
       }
     },
   },
+  mounted() {
+    this.fetchApplications();
+  },
 };
 </script>
+
+<style scoped>
+.candidatures-section {
+  margin: 40px 0 0 0;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 24px;
+  background: #fafbfc;
+}
+.candidature-card {
+  border-bottom: 1px solid #e0e0e0;
+  padding: 14px 0 12px 0;
+  margin-bottom: 10px;
+}
+.candidature-header {
+  font-size: 1.1em;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dot {
+  height: 10px;
+  width: 10px;
+  background-color: #007bff;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 7px;
+}
+.job-title { color: #222; }
+.company { color: #007bff; font-weight: 500; }
+.location { color: #888; }
+.candidature-status {
+  margin: 3px 0 0 22px;
+  font-size: 0.95em;
+}
+.statut-envoye { color: #28a745; font-weight: bold; }
+.statut-deja { color: #ff9800; font-weight: bold; }
+.statut-echec { color: #c62828; font-weight: bold; }
+.statut-autre { color: #555; font-weight: bold; }
+.candidature-actions {
+  margin-top: 5px;
+  margin-left: 22px;
+  display: flex;
+  gap: 10px;
+}
+.candidature-actions button,
+.candidature-actions a {
+  background: #f5f5f5;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 5px 13px;
+  text-decoration: none;
+  color: #222;
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: background 0.2s;
+}
+.candidature-actions button:hover,
+.candidature-actions a:hover {
+  background: #e0e0e0;
+}
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 28px 32px;
+  min-width: 320px;
+  max-width: 80vw;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+}
+.modal-content h3 { margin-top: 0; }
+.modal-content pre {
+  background: #f9f9f9;
+  border-radius: 4px;
+  padding: 12px;
+  font-size: 0.97em;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.modal-content button {
+  margin-top: 18px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+.modal-content button:hover {
+  background: #0056b3;
+}
+</style>
+
 
 <style scoped>
 .home {

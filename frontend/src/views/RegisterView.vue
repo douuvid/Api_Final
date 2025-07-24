@@ -19,6 +19,11 @@
         <input type="password" id="password" v-model="form.password" required>
       </div>
 
+      <div class="form-group">
+        <label for="phone">Numéro de téléphone:</label>
+        <input type="tel" id="phone" v-model="form.phone" placeholder="Ex: 0612345678" required>
+      </div>
+
       <hr>
       <p>Vos préférences de recherche :</p>
 
@@ -63,6 +68,7 @@ export default {
         password: '',
         first_name: '',
         last_name: '',
+        phone: '',
         search_query: '',
         contract_type: '',
         location: 'Toute la France'
@@ -80,7 +86,7 @@ export default {
     async handleRegister() {
       this.message = '';
       try {
-        const response = await axios.post('http://localhost:8080/register', this.form);
+        const response = await axios.post('http://localhost:8000/register', this.form);
         this.message = response.data.message || 'Inscription réussie!';
         setTimeout(() => {
           this.$router.push('/login');

@@ -9,7 +9,11 @@
       <p><strong>Lettre de motivation:</strong> {{ user.lm_path ? getFilename(user.lm_path) : 'Aucune lettre de motivation téléversée' }}</p>
     </div>
     <div v-else>
-      <p>Chargement des informations...</p>
+      <p><strong>Statut:</strong> Chargement des informations...</p>
+      <div v-if="preferencesError" class="error-panel">
+        <p><strong>Erreur de connexion:</strong> {{ preferencesError }}</p>
+        <p><em>Diagnostic:</em> Vérification de l'authentification en cours...</p>
+      </div>
     </div>
 
     <hr class="separator">
@@ -110,12 +114,14 @@ export default {
   methods: {
     async fetchUserProfile() {
       const token = localStorage.getItem('access_token');
+      // Afficher le token pour débogage
+      this.preferencesError = token ? `Token trouvé: ${token.substring(0, 15)}...` : 'Token absent';
       if (!token) {
         this.$router.push('/login');
         return;
       }
       try {
-        const response = await axios.get('http://localhost:8080/users/me', {
+        const response = await axios.get('http://localhost:8000/users/me', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         this.user = response.data;
@@ -125,7 +131,10 @@ export default {
         this.preferencesForm.location = this.user.location || 'Toute la France';
       } catch (error) {
         console.error('Erreur de récupération du profil:', error);
-        this.logout(); // Logout if token is invalid or expired
+        // Afficher le détail de l'erreur au lieu de déconnecter automatiquement
+        this.preferencesError = `Erreur: ${error.response?.data?.detail || error.message || 'Problème de connexion au serveur'}`;
+        // Ne pas déconnecter automatiquement pour voir le problème
+        // this.logout(); // Commenté pour éviter déconnexion auto
       }
     },
     onFileSelected(event, docType) {
@@ -152,7 +161,7 @@ export default {
 
       const token = localStorage.getItem('access_token');
       try {
-        await axios.post('http://localhost:8080/users/me/upload-document', formData, {
+        await axios.post('http://localhost:8000/users/me/upload-document', formData, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'multipart/form-data'
@@ -176,7 +185,7 @@ export default {
       this.preferencesError = '';
       const token = localStorage.getItem('access_token');
       try {
-        const response = await axios.put('http://localhost:8080/users/me/preferences', this.preferencesForm, {
+        const response = await axios.put('http://localhost:8000/users/me/preferences', this.preferencesForm, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         this.preferencesMessage = response.data.message || 'Préférences mises à jour avec succès !';

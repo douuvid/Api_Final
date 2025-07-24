@@ -2,8 +2,8 @@ import os
 import sys
 import logging
 import shutil
-import uuid
-from typing import Optional
+from uuid import uuid4, UUID
+from typing import Optional, List, Union
 
 # Ajoute la racine du projet au chemin Python pour résoudre les problèmes d'importation
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +58,7 @@ class UserRegistration(BaseModel):
     password: str
     first_name: str
     last_name: str
+    phone: Optional[str] = None
     search_query: Optional[str] = None
     contract_type: Optional[str] = None
     location: Optional[str] = None
@@ -68,7 +69,7 @@ class UserPreferencesUpdate(BaseModel):
     location: Optional[str] = None
 
 class UserInDB(BaseModel):
-    id: int
+    id: Union[int, str, UUID]
     email: EmailStr
     first_name: str
     last_name: str
@@ -113,6 +114,27 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: UserDatabase = Dep
     return user
 
 # --- Points de terminaison ---
+
+from typing import List
+from fastapi import Response
+from pydantic import BaseModel
+
+class ApplicationOut(BaseModel):
+    title: str
+    company: str
+    location: str
+    description: str
+    offer_url: str
+    status: str
+    applied_at: str
+
+@app.get("/users/me/applications", response_model=List[ApplicationOut], tags=["Users"])
+def get_user_applications(current_user: dict = Depends(get_current_user), db: UserDatabase = Depends(get_db)):
+    """Retourne la liste des candidatures iQuesta de l'utilisateur courant."""
+    user_id = current_user['id']
+    applications = db.get_user_applications(user_id)
+    return applications
+
 @app.get("/", tags=["Root"])
 def read_root():
     return {"message": "API fonctionnelle"}
@@ -132,6 +154,7 @@ def register_user(user_data: UserRegistration, db: UserDatabase = Depends(get_db
             "email": user_data.email,
             "first_name": user_data.first_name,
             "last_name": user_data.last_name,
+            "phone": user_data.phone,  # Ajout du champ téléphone
             "search_query": user_data.search_query,
             "contract_type": user_data.contract_type,
             "location": user_data.location
@@ -154,7 +177,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     logger.info(f"Tentative de connexion pour l'utilisateur : {form_data.username}")
     user = db.get_user_by_email(form_data.username)
     
-    if not user or not verify_password(form_data.password, user['hashed_password']):
+    if not user or not verify_password(form_data.password, user['password_hash']):
         logger.warning(f"Échec de la connexion pour {form_data.username}: utilisateur non trouvé ou mot de passe incorrect.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -202,7 +225,7 @@ def upload_document(
 
     # Crée un nom de fichier unique pour éviter les conflits
     file_extension = os.path.splitext(file.filename)[1]
-    unique_filename = f"{current_user['id']}_{doc_type}_{uuid.uuid4().hex}{file_extension}"
+    unique_filename = f"{current_user['id']}_{doc_type}_{uuid4().hex}{file_extension}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
     try:

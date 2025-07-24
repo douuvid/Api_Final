@@ -35,7 +35,7 @@ export default {
         params.append('username', this.email);
         params.append('password', this.password);
 
-        const response = await axios.post('http://localhost:8080/login', params, {
+        const response = await axios.post('http://localhost:8000/login', params, {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
           }
@@ -43,7 +43,7 @@ export default {
         
         localStorage.setItem('access_token', response.data.access_token);
         this.message = 'Connexion réussie ! Redirection...';
-        this.$router.push('/profile');
+        this.$router.push('/profile'); // Redirection automatique vers le profil après connexion
 
       } catch (error) {
         if (error.response && error.response.data && error.response.data.detail) {
